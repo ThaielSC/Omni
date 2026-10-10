@@ -1,0 +1,43 @@
+Name            : ripgrep
+Version         : 14.1.0-1
+Description     : Line-oriented search tool that recursively searches the current directory for a regex pattern
+Architecture    : x86_64
+URL             : https://github.com/BurntSushi/ripgrep
+Licenses        : MIT  Unlicense
+Groups          : None
+Provides        : None
+Depends On      : glibc  pcre2
+Optional Deps   : None
+Required By     : None
+Optional For    : None
+Conflicts With  : None
+Replaces        : None
+Installed Size  : 4.82 MiB
+Packager        : Arch Linux Package Maintainer
+Build Date      : Mon 15 Jan 2024 10:20:30 AM UTC
+Install Date    : Wed 14 Aug 2024 02:45:12 PM UTC
+Install Reason  : Explicitly installed
+Install Script  : No
+Validated By    : Signature
+
+Name            : base
+Version         : 3-2
+Description     : Minimal package set to define a basic Arch Linux installation
+Architecture    : any
+URL             : https://archlinux.org
+Licenses        : GPL
+Groups          : None
+Provides        : None
+Depends On      : bash  bzip2  coreutils  file  filesystem  findutils  gawk  gcc-libs  gettext  glibc  grep  gzip  iproute2  iputils  less  licenses  logrotate  man-db  man-pages  pacman  pciutils  psmisc  sed  shadow  systemd  systemd-sysvcompat  tar  util-linux
+Optional Deps   : linux: bare metal support [installed]
+Required By     : None
+Optional For    : None
+Conflicts With  : None
+Replaces        : None
+Installed Size  : 0.00 B
+Packager        : Arch Linux Package Maintainer
+Build Date      : Wed 20 Dec 2023 04:15:00 AM UTC
+Install Date    : Mon 01 Jan 2024 12:00:00 AM UTC
+Install Reason  : Explicitly installed
+Install Script  : No
+Validated By    : Signature
