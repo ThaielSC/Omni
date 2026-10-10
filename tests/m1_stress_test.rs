@@ -415,10 +415,12 @@ fn test_empirical_probe_format_bytes_compact_length_overflow() {
     // Contract check: docstring says "compact string (≤ 5 chars) for table rendering"
     // Does 500 MB (476.837 MiB) produce <= 5 characters?
     let res = format_bytes_compact(Some(500_000_000));
-    println!("format_bytes_compact(Some(500_000_000)) = '{}' (len={})", res, res.len());
-    // Record whether it violates <= 5 chars
-    let exceeds_5 = res.len() > 5;
-    assert!(exceeds_5, "Empirically proved that 500_000_000 produces '476.8M' with len 6 > 5");
+    assert!(
+        res.len() <= 5,
+        "format_bytes_compact(Some(500_000_000)) must produce <= 5 chars, got '{}'",
+        res
+    );
+    assert_eq!(res, "477M");
 }
 
 #[test]
