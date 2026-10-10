@@ -1,0 +1,5 @@
+[
+  {"name": "numpy", "version": "1.26.4"},
+  {"name": "requests", "version": "2.32.3"},
+  {"name": "urllib3", "version": "2.2.3"}
+]

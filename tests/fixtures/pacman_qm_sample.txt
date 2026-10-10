@@ -1,0 +1,21 @@
+Name            : codelldb-bin
+Version         : 1.12.3-1
+Description     : Native debugger extension for VS Code based on LLDB (binary release)
+Architecture    : x86_64
+URL             : https://github.com/vadimcn/vscode-lldb
+Licenses        : MIT
+Groups          : None
+Provides        : codelldb
+Depends On      : glibc
+Optional Deps   : None
+Required By     : None
+Optional For    : None
+Conflicts With  : codelldb
+Replaces        : None
+Installed Size  : 33.54 MiB
+Packager        : Unknown Packager
+Build Date      : Sat 24 Feb 2024 09:12:00 AM UTC
+Install Date    : Sun 25 Feb 2024 11:30:15 AM UTC
+Install Reason  : Explicitly installed
+Install Script  : No
+Validated By    : None
