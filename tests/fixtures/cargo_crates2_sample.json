@@ -1,0 +1,27 @@
+{
+  "installs": {
+    "zellij 0.45.1 (registry+https://github.com/rust-lang/crates.io-index)": {
+      "bins": [
+        "zellij"
+      ],
+      "features": [],
+      "all_features": false,
+      "no_default_features": false,
+      "profile": "release",
+      "target": "x86_64-unknown-linux-gnu",
+      "rustc": "rustc 1.98.0 (a7e2e3409 2026-07-28)"
+    },
+    "tdf-viewer 0.5.0 (git+https://github.com/itsjunetime/tdf.git#de0050499e96f2f9d69b3e380fa3dd8de7119b90)": {
+      "bins": [
+        "for_profiling",
+        "tdf"
+      ],
+      "features": [],
+      "all_features": false,
+      "no_default_features": false,
+      "profile": "release",
+      "target": "x86_64-unknown-linux-gnu",
+      "rustc": "rustc 1.98.0 (a7e2e3409 2026-07-28)"
+    }
+  }
+}
