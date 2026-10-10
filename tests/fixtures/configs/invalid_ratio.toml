@@ -1,0 +1,4 @@
+# tests/fixtures/configs/invalid_ratio.toml
+[layout]
+ratio = [ 1, 2 ]
+border_style = "nonexistent_style"

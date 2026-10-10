@@ -1,0 +1,5 @@
+# tests/fixtures/configs/malformed.toml
+# Broken TOML syntax intentionally
+[layout
+ratio = [1, 2, 3
+invalid syntax here !!!
