@@ -1,0 +1,3 @@
+# tests/fixtures/configs/minimal.toml
+[layout]
+ratio = [ 1, 2, 3 ]

@@ -1,0 +1,24 @@
+[
+  {
+    "name": "Zen",
+    "application_id": "app.zen_browser.zen",
+    "version": "1.23.2b",
+    "branch": "stable",
+    "arch": "x86_64",
+    "installed_size": "427.9\u00a0MB",
+    "description": "Stay focused, browse faster",
+    "origin": "flathub",
+    "installation": "system"
+  },
+  {
+    "name": "Google Chrome",
+    "application_id": "com.google.Chrome",
+    "version": "131.0.6778.85",
+    "branch": "stable",
+    "arch": "x86_64",
+    "installed_size": "310.2\u00a0MB",
+    "description": "The web browser from Google",
+    "origin": "flathub",
+    "installation": "system"
+  }
+]

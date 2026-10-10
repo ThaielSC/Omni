@@ -1,0 +1,5 @@
+# tests/fixtures/configs/doas_behavior.toml
+[behavior]
+confirm_uninstall = true
+sudo_command = "doas"
+preload_disk_sizes = false
