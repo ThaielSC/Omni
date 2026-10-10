@@ -52,7 +52,7 @@ where
     }
 
     match RatioRepr::deserialize(deserializer)? {
-        RatioRepr::Exact(arr) => Ok(arr),
+        RatioRepr::Exact(arr) => Ok(arr.map(|val| if val == 0 { 1 } else { val })),
         RatioRepr::Dynamic(vec) => {
             let mut ratio = [1, 2, 3];
             for (i, &val) in vec.iter().take(3).enumerate() {
@@ -122,6 +122,9 @@ pub fn parse_hex_color(hex_str: &str) -> Result<Color, ParseColorError> {
     }
 
     if let Some(raw) = trimmed.strip_prefix('#') {
+        if !raw.is_ascii() || !raw.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(ParseColorError::InvalidFormat(trimmed.to_string()));
+        }
         if raw.len() == 6 {
             let r = u8::from_str_radix(&raw[0..2], 16)
                 .map_err(|e| ParseColorError::InvalidHex(trimmed.to_string(), e.to_string()))?;
@@ -166,7 +169,7 @@ pub fn parse_hex_color(hex_str: &str) -> Result<Color, ParseColorError> {
     }
 
     // Check non-prefixed hex string
-    if trimmed.len() == 6 && trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
+    if trimmed.is_ascii() && trimmed.len() == 6 && trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
         let r = u8::from_str_radix(&trimmed[0..2], 16)
             .map_err(|e| ParseColorError::InvalidHex(trimmed.to_string(), e.to_string()))?;
         let g = u8::from_str_radix(&trimmed[2..4], 16)
@@ -176,7 +179,7 @@ pub fn parse_hex_color(hex_str: &str) -> Result<Color, ParseColorError> {
         return Ok(Color::Rgb(r, g, b));
     }
 
-    if trimmed.len() == 3 && trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
+    if trimmed.is_ascii() && trimmed.len() == 3 && trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
         let r = u8::from_str_radix(&trimmed[0..1], 16)
             .map_err(|e| ParseColorError::InvalidHex(trimmed.to_string(), e.to_string()))?;
         let g = u8::from_str_radix(&trimmed[1..2], 16)
@@ -1130,17 +1133,22 @@ pub fn parse_keymap_toml(content: &str) -> Result<KeymapConfig, toml::de::Error>
 }
 
 impl OmniConfig {
-    /// Loads configuration from default paths (~/.config/omni/config.toml, ~/.config/omni/theme.toml).
+    /// Loads configuration from default paths (~/.config/omni/config.toml, ~/.config/omni/theme.toml, ~/.config/omni/keymap.toml).
     /// If files do not exist or fail to parse, falls back gracefully to defaults.
     pub fn load_or_default() -> Self {
         Self::load_from_paths(
             default_config_path().as_deref(),
             default_theme_path().as_deref(),
+            default_keymap_path().as_deref(),
         )
     }
 
-    /// Loads configuration with explicit optional paths for config.toml and theme.toml.
-    pub fn load_from_paths(config_path: Option<&Path>, theme_path: Option<&Path>) -> Self {
+    /// Loads configuration with explicit optional paths for config.toml, theme.toml, and keymap.toml.
+    pub fn load_from_paths(
+        config_path: Option<&Path>,
+        theme_path: Option<&Path>,
+        keymap_path: Option<&Path>,
+    ) -> Self {
         let mut config = Self::default();
 
         if let Some(content) = config_path.and_then(|p| std::fs::read_to_string(p).ok())
@@ -1153,6 +1161,12 @@ impl OmniConfig {
             && let Ok(theme) = parse_theme_toml(&content)
         {
             config.theme = theme;
+        }
+
+        if let Some(content) = keymap_path.and_then(|p| std::fs::read_to_string(p).ok())
+            && let Ok(keymap) = parse_keymap_toml(&content)
+        {
+            config.keymap = keymap;
         }
 
         // Also check if managers.toml exists in default location
@@ -1426,5 +1440,190 @@ mod tests {
         assert_eq!(managers[0].name, "UV Tools");
         assert_eq!(managers[0].format, OutputFormat::LineRegex);
         assert!(!managers[0].need_sudo);
+    }
+
+    #[test]
+    fn test_parse_hex_color_multibyte_utf8_boundary_safety() {
+        // Multi-byte UTF-8 inputs matching byte length 6
+        assert_eq!(
+            parse_hex_color("#🔥12"),
+            Err(ParseColorError::InvalidFormat("#🔥12".to_string()))
+        );
+        assert_eq!(
+            parse_hex_color("#a\u{00e9}bcd"),
+            Err(ParseColorError::InvalidFormat("#a\u{00e9}bcd".to_string()))
+        );
+        assert_eq!(
+            parse_hex_color("#ééé"),
+            Err(ParseColorError::InvalidFormat("#ééé".to_string()))
+        );
+
+        // Multi-byte UTF-8 inputs matching byte length 3
+        assert_eq!(
+            parse_hex_color("#ñ1"),
+            Err(ParseColorError::InvalidFormat("#ñ1".to_string()))
+        );
+        assert_eq!(
+            parse_hex_color("#\u{20ac}"),
+            Err(ParseColorError::InvalidFormat("#€".to_string()))
+        );
+
+        // ASCII strings with non-hex characters
+        assert_eq!(
+            parse_hex_color("#gggggg"),
+            Err(ParseColorError::InvalidFormat("#gggggg".to_string()))
+        );
+        assert_eq!(
+            parse_hex_color("#ggg"),
+            Err(ParseColorError::InvalidFormat("#ggg".to_string()))
+        );
+        assert_eq!(
+            parse_hex_color("#12z456"),
+            Err(ParseColorError::InvalidFormat("#12z456".to_string()))
+        );
+
+        // Non-prefixed multibyte strings
+        assert_eq!(
+            parse_hex_color("🔥12"),
+            Err(ParseColorError::InvalidFormat("🔥12".to_string()))
+        );
+        assert_eq!(
+            parse_hex_color("ééé"),
+            Err(ParseColorError::InvalidFormat("ééé".to_string()))
+        );
+        assert_eq!(
+            parse_hex_color("ñ1"),
+            Err(ParseColorError::InvalidFormat("ñ1".to_string()))
+        );
+
+        // Valid colors continue to succeed
+        assert_eq!(parse_hex_color("#282828").unwrap(), Color::Rgb(0x28, 0x28, 0x28));
+        assert_eq!(parse_hex_color("#fff").unwrap(), Color::Rgb(255, 255, 255));
+        assert_eq!(parse_hex_color("d4be98").unwrap(), Color::Rgb(0xd4, 0xbe, 0x98));
+        assert_eq!(parse_hex_color("red").unwrap(), Color::Red);
+    }
+
+    #[test]
+    fn test_layout_clamped_ratio_exact_and_zeros() {
+        let toml_exact_zero = r#"
+            [layout]
+            ratio = [ 0, 2, 3 ]
+        "#;
+        let config = OmniConfig::from_toml_str(toml_exact_zero).unwrap();
+        assert_eq!(config.layout.ratio, [1, 2, 3]);
+
+        let toml_all_zeros = r#"
+            [layout]
+            ratio = [ 0, 0, 0 ]
+        "#;
+        let config2 = OmniConfig::from_toml_str(toml_all_zeros).unwrap();
+        assert_eq!(config2.layout.ratio, [1, 1, 1]);
+
+        let toml_middle_zero = r#"
+            [layout]
+            ratio = [ 3, 0, 5 ]
+        "#;
+        let config3 = OmniConfig::from_toml_str(toml_middle_zero).unwrap();
+        assert_eq!(config3.layout.ratio, [3, 1, 5]);
+    }
+
+    #[test]
+    fn test_default_keymap_path_resolution() {
+        if let Some(path) = default_keymap_path() {
+            assert!(path.ends_with("omni/keymap.toml") || path.ends_with("omni\\keymap.toml"));
+        }
+    }
+
+    #[test]
+    fn test_load_from_paths_all_none_returns_defaults() {
+        let config = OmniConfig::load_from_paths(None, None, None);
+        assert_eq!(config.layout, LayoutConfig::default());
+        assert_eq!(config.theme, ThemeConfig::default());
+        assert_eq!(config.keymap, KeymapConfig::default());
+        assert_eq!(config.behavior, BehaviorConfig::default());
+    }
+
+    #[test]
+    fn test_load_from_paths_with_keymap_wrapped() {
+        use std::io::Write;
+        let mut tmp_file = tempfile::NamedTempFile::new().unwrap();
+        let content = r#"
+            [keymap]
+            quit = "<C-x>"
+            down = ["j", "s"]
+        "#;
+        tmp_file.write_all(content.as_bytes()).unwrap();
+
+        let config = OmniConfig::load_from_paths(None, None, Some(tmp_file.path()));
+        assert_eq!(config.keymap.quit.as_slice(), &["<C-x>"]);
+        assert_eq!(config.keymap.down.as_slice(), &["j", "s"]);
+        assert_eq!(config.keymap.up.as_slice(), &["k", "<Up>"]);
+        assert_eq!(config.layout, LayoutConfig::default());
+    }
+
+    #[test]
+    fn test_load_from_paths_with_keymap_bare() {
+        use std::io::Write;
+        let mut tmp_file = tempfile::NamedTempFile::new().unwrap();
+        let content = r#"
+            quit = "Z"
+            help = "F1"
+        "#;
+        tmp_file.write_all(content.as_bytes()).unwrap();
+
+        let config = OmniConfig::load_from_paths(None, None, Some(tmp_file.path()));
+        assert_eq!(config.keymap.quit.as_slice(), &["Z"]);
+        assert_eq!(config.keymap.help.as_slice(), &["F1"]);
+        assert_eq!(config.keymap.down.as_slice(), &["j", "<Down>"]);
+    }
+
+    #[test]
+    fn test_load_from_paths_keymap_overrides_config_toml() {
+        use std::io::Write;
+        let mut cfg_file = tempfile::NamedTempFile::new().unwrap();
+        let cfg_content = r#"
+            [layout]
+            ratio = [2, 3, 4]
+
+            [keymap]
+            quit = "Q"
+        "#;
+        cfg_file.write_all(cfg_content.as_bytes()).unwrap();
+
+        let mut km_file = tempfile::NamedTempFile::new().unwrap();
+        let km_content = r#"
+            [keymap]
+            quit = "<C-q>"
+        "#;
+        km_file.write_all(km_content.as_bytes()).unwrap();
+
+        let config = OmniConfig::load_from_paths(
+            Some(cfg_file.path()),
+            None,
+            Some(km_file.path()),
+        );
+
+        assert_eq!(config.layout.ratio, [2, 3, 4]);
+        assert_eq!(config.keymap.quit.as_slice(), &["<C-q>"]);
+    }
+
+    #[test]
+    fn test_load_from_paths_missing_or_corrupt_keymap_graceful() {
+        let non_existent = PathBuf::from("/non/existent/path/omni/keymap.toml");
+        let config_missing = OmniConfig::load_from_paths(None, None, Some(&non_existent));
+        assert_eq!(config_missing.keymap, KeymapConfig::default());
+
+        use std::io::Write;
+        let mut bad_file = tempfile::NamedTempFile::new().unwrap();
+        bad_file.write_all(b"not a valid [[[[ toml").unwrap();
+        let config_bad = OmniConfig::load_from_paths(None, None, Some(bad_file.path()));
+        assert_eq!(config_bad.keymap, KeymapConfig::default());
+    }
+
+    #[test]
+    fn test_load_or_default_completes_without_panic() {
+        let config = OmniConfig::load_or_default();
+        assert_eq!(config.layout.ratio.len(), 3);
+        assert!(!config.keymap.quit.as_slice().is_empty());
     }
 }

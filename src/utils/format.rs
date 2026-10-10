@@ -50,16 +50,22 @@ pub fn format_bytes_compact(bytes: Option<u64>) -> String {
             const TIB: f64 = 1024.0 * GIB;
 
             let bf = b as f64;
-            if bf >= TIB {
-                format!("{:.1}T", bf / TIB)
+            let (val, suffix) = if bf >= TIB {
+                (bf / TIB, "T")
             } else if bf >= GIB {
-                format!("{:.1}G", bf / GIB)
+                (bf / GIB, "G")
             } else if bf >= MIB {
-                format!("{:.1}M", bf / MIB)
+                (bf / MIB, "M")
             } else if bf >= KIB {
-                format!("{:.1}K", bf / KIB)
+                (bf / KIB, "K")
             } else {
-                format!("{}B", b)
+                return format!("{}B", b);
+            };
+
+            if val >= 99.95 {
+                format!("{:.0}{}", val, suffix)
+            } else {
+                format!("{:.1}{}", val, suffix)
             }
         }
     }
@@ -148,6 +154,54 @@ mod tests {
         assert_eq!(format_bytes_compact(Some(5 * 1024 * 1024)), "5.0M");
         assert_eq!(format_bytes_compact(Some(1024 * 1024 * 1024)), "1.0G");
         assert_eq!(format_bytes_compact(Some(1024 * 1024 * 1024 * 1024)), "1.0T");
+    }
+
+    #[test]
+    fn test_format_bytes_compact_large_values_no_decimals() {
+        assert_eq!(format_bytes_compact(Some(100 * 1024 * 1024)), "100M");
+        assert_eq!(
+            format_bytes_compact(Some((118.2 * 1024.0 * 1024.0) as u64)),
+            "118M"
+        );
+        assert_eq!(format_bytes_compact(Some(500_000_000)), "477M");
+        assert_eq!(format_bytes_compact(Some(999 * 1024 * 1024)), "999M");
+        assert_eq!(format_bytes_compact(Some(1023 * 1024 * 1024)), "1023M");
+        assert_eq!(format_bytes_compact(Some(250 * 1024 * 1024 * 1024)), "250G");
+        assert_eq!(
+            format_bytes_compact(Some(500 * 1024 * 1024 * 1024 * 1024)),
+            "500T"
+        );
+    }
+
+    #[test]
+    fn test_format_bytes_compact_width_invariant_le_5() {
+        let probe_values = [
+            0,
+            1,
+            500,
+            1023,
+            1024,
+            5 * 1024 * 1024,
+            50 * 1024 * 1024,
+            99 * 1024 * 1024,
+            (99.95 * 1024.0 * 1024.0) as u64,
+            100 * 1024 * 1024,
+            118 * 1024 * 1024,
+            500_000_000,
+            1024 * 1024 * 1024,
+            100 * 1024 * 1024 * 1024,
+            1024 * 1024 * 1024 * 1024,
+        ];
+        for b in probe_values {
+            let formatted = format_bytes_compact(Some(b));
+            assert!(
+                formatted.len() <= 5,
+                "Size {} produced '{}' (len {}) > 5",
+                b,
+                formatted,
+                formatted.len()
+            );
+        }
     }
 
     #[test]
