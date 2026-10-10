@@ -1,0 +1,20 @@
+# tests/fixtures/configs/gruvbox_theme.toml
+[theme]
+name = "gruvbox-material"
+
+[theme.colors]
+bg = "#282828"
+fg = "#d4be98"
+border = "#5a524c"
+border_focused = "#d8a657"
+selection_bg = "#45403d"
+selection_fg = "#d4be98"
+cursor_bar = "#d8a657"
+status_bar_bg = "#32302f"
+status_bar_fg = "#d4be98"
+mode_normal_bg = "#a9b665"
+mode_normal_fg = "#282828"
+mode_search_bg = "#e78a4e"
+mode_search_fg = "#282828"
+mode_alert_bg = "#ea6962"
+mode_alert_fg = "#282828"

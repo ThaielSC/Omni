@@ -1,0 +1,90 @@
+# tests/fixtures/configs/valid_custom.toml
+# Complete valid Omni configuration
+
+[layout]
+ratio = [ 1, 2, 3 ]
+show_managers = true
+show_details = true
+border_style = "rounded"
+padding = 1
+
+[theme]
+name = "gruvbox-material"
+
+[theme.colors]
+bg = "#282828"
+fg = "#d4be98"
+border = "#5a524c"
+border_focused = "#d8a657"
+selection_bg = "#45403d"
+selection_fg = "#d4be98"
+cursor_bar = "#d8a657"
+status_bar_bg = "#32302f"
+status_bar_fg = "#d4be98"
+mode_normal_bg = "#a9b665"
+mode_normal_fg = "#282828"
+mode_search_bg = "#e78a4e"
+mode_search_fg = "#282828"
+mode_alert_bg = "#ea6962"
+mode_alert_fg = "#282828"
+
+[theme.colors.badge_pacman]
+fg = "#7daea3"
+bold = true
+
+[theme.colors.badge_aur]
+fg = "#e78a4e"
+bold = true
+
+[theme.colors.badge_flatpak]
+fg = "#d3869b"
+bold = true
+
+[theme.colors.badge_cargo]
+fg = "#ea6962"
+bold = true
+
+[theme.colors.badge_python]
+fg = "#d8a657"
+bold = true
+
+[theme.colors.size_heavy]
+fg = "#ea6962"
+
+[theme.colors.size_medium]
+fg = "#e78a4e"
+
+[theme.colors.size_light]
+fg = "#a9b665"
+
+[keymap]
+focus_left = [ "h", "<Left>" ]
+focus_right = [ "l", "<Right>" ]
+focus_next = [ "<Tab>" ]
+focus_prev = [ "<BackTab>" ]
+down = [ "j", "<Down>" ]
+up = [ "k", "<Up>" ]
+page_down = [ "<C-d>", "<PageDown>" ]
+page_up = [ "<C-u>", "<PageUp>" ]
+top = [ "g", "<Home>" ]
+bottom = [ "G", "<End>" ]
+goto_all = "1"
+goto_pacman = "2"
+goto_aur = "3"
+goto_flatpak = "4"
+goto_cargo = "5"
+goto_python = "6"
+search = "/"
+clear_search = "<Esc>"
+sort_toggle = "s"
+uninstall = [ "d", "x" ]
+reload = "r"
+help = "?"
+quit = [ "q", "<C-c>" ]
+toggle_managers = "M"
+toggle_details = "D"
+
+[behavior]
+confirm_uninstall = true
+sudo_command = "sudo"
+preload_disk_sizes = true
