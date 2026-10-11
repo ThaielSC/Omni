@@ -20,7 +20,7 @@ Una vez alcanzada la versión 1.0.0:
 
 ### Criterios obligatorios para publicar `v1.0.0`
 
-- [ ] Compilar con `cargo build --release` y pasar `cargo test` en CI sobre una versión soportada de Rust.
+- [x] Compilar con `cargo build --release` y pasar `cargo test --all-targets` en CI sobre Rust estable. Ambos workflows de CI pasaron para el commit `d053030ff3f6943d81b0a600b777c332b14fad61` el 2026-10-11: [workflow 38109130367](https://github.com/ThaielSC/Omni/actions/runs/38109130367) y [workflow 38109126423](https://github.com/ThaielSC/Omni/actions/runs/38109126423).
 - [x] Manual de instalación, configuración, keybindings, operaciones y limitaciones actualizado; `LICENSE` MIT presente y metadatos Cargo alineados.
 - [x] Validar la TUI en terminales amplias y estrechas, todos los estilos de paneles, live reload, selección múltiple, ayuda y errores/notificaciones. Revisada en PTY de 120×36 y 60×14; la recarga en vivo, Space/comma, modal de ayuda y notificación/log de TOML malformado funcionaron. Tests de buffer verifican los glifos para los cinco estilos con separadores/bordes.
 - [ ] Verificar en un entorno descartable las operaciones reales de listado, updates y desinstalación para cada proveedor habilitado; confirmar flujo de sudo, cancelación y refresco tras éxito. Uninstall/refresco pasó para los seis proveedores globales; updates globales de Pacman, Flatpak, Cargo, uv y pip y Cargo/npm/Bun project add/remove/update también pasaron en entornos temporales. Aún faltan un update real vía yay/AUR y autenticación real de sudo. El flujo de password de Pacman se probó con un helper ficticio y no valida credenciales del sistema. Evidencia en [`PROVIDER_SUPPORT.md`](PROVIDER_SUPPORT.md).
