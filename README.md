@@ -254,6 +254,7 @@ Omni conserva los avisos breves de la status bar y el resultado de operaciones e
 - `omni --logs`: muestra las últimas 500 entradas.
 - `omni --log-path`: imprime la ruta del archivo.
 - Ubicación por defecto: `${XDG_STATE_HOME}/omni/omni.log`, o `~/.local/state/omni/omni.log` si `XDG_STATE_HOME` no está configurado.
+- Estos dos comandos de inspección no escriben en el log, para que consultarlo no agregue ruido ni una entrada de inicio nueva.
 
 El archivo rota al superar 1 MiB, conserva una copia `.log.1` y se crea con permisos privados en sistemas Unix.
 
