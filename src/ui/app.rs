@@ -49,7 +49,7 @@ enum Overlay {
 
 #[derive(Debug)]
 enum UiEvent {
-    Packages(Vec<UnifiedPackage>),
+    Packages((Vec<UnifiedPackage>, Vec<String>)),
     UninstallOutput(String),
     UninstallFinished(Option<i32>),
 }
@@ -79,8 +79,10 @@ struct App {
     help_filter: String,
     help_filtering: bool,
     loading: bool,
+    started_at: Instant,
     reload_after_loading: bool,
     notice: Option<(String, Instant)>,
+    notice_queue: Vec<String>,
     reload_tx: Sender<UiEvent>,
     show_package_dependencies: bool,
     dependency_index: usize,
@@ -110,8 +112,10 @@ impl App {
             help_filter: String::new(),
             help_filtering: false,
             loading: true,
+            started_at: Instant::now(),
             reload_after_loading: false,
             notice: None,
+            notice_queue: Vec::new(),
             reload_tx,
             show_package_dependencies: false,
             dependency_index: 0,
@@ -654,13 +658,28 @@ impl App {
         self.notice = Some((message.into(), Instant::now() + Duration::from_secs(3)));
     }
 
+    fn show_next_notice(&mut self) {
+        let Some(message) = (!self.notice_queue.is_empty()).then(|| self.notice_queue.remove(0))
+        else {
+            return;
+        };
+        self.notice = Some((message, Instant::now() + Duration::from_secs(4)));
+    }
+
     fn apply_ui_event(&mut self, event: UiEvent) {
         match event {
-            UiEvent::Packages(mut packages) => {
+            UiEvent::Packages((mut packages, errors)) => {
                 self.sort.sort_packages(&mut packages);
                 self.packages = packages;
                 self.loading = false;
                 self.update_filter();
+                if !errors.is_empty() {
+                    self.notice_queue = errors
+                        .into_iter()
+                        .map(|error| format!("Package scan error — {error}"))
+                        .collect();
+                    self.show_next_notice();
+                }
                 if self.reload_after_loading {
                     self.reload_after_loading = false;
                     self.start_reload();
@@ -752,6 +771,14 @@ fn event_loop(
         for event in rx.try_iter() {
             app.apply_ui_event(event);
         }
+        if app
+            .notice
+            .as_ref()
+            .is_some_and(|(_, expires)| *expires <= Instant::now())
+        {
+            app.notice = None;
+            app.show_next_notice();
+        }
         if let Some(result) = watcher.poll() {
             match result {
                 Ok((config, managers_changed)) => app.apply_config(config, managers_changed),
@@ -759,7 +786,7 @@ fn event_loop(
             }
         }
         terminal.draw(|frame| render(frame, app))?;
-        if event::poll(Duration::from_millis(80))? {
+        if event::poll(Duration::from_millis(if app.loading { 80 } else { 250 }))? {
             if let Event::Key(key) = event::read()? {
                 if key.kind == KeyEventKind::Release {
                     continue;
@@ -929,7 +956,9 @@ fn read_config_file(path: &Path) -> Result<String, String> {
         .map_err(|error| format!("cannot read {}: {error}", path.display()))
 }
 
-fn scan_packages(custom_configs: Vec<crate::config::CustomManagerConfig>) -> Vec<UnifiedPackage> {
+fn scan_packages(
+    custom_configs: Vec<crate::config::CustomManagerConfig>,
+) -> (Vec<UnifiedPackage>, Vec<String>) {
     let providers: Vec<Box<dyn PackageManagerProvider>> = vec![
         Box::new(PacmanProvider),
         Box::new(YayProvider),
@@ -939,21 +968,24 @@ fn scan_packages(custom_configs: Vec<crate::config::CustomManagerConfig>) -> Vec
         Box::new(PipProvider),
     ];
     let mut packages = Vec::new();
+    let mut errors = Vec::new();
     for provider in providers {
-        if provider.is_available()
-            && let Ok(mut found) = provider.list_packages()
-        {
-            packages.append(&mut found);
+        if provider.is_available() {
+            match provider.list_packages() {
+                Ok(mut found) => packages.append(&mut found),
+                Err(error) => errors.push(format!("{}: {error}", provider.id())),
+            }
         }
     }
     for provider in CustomManager::from_configs(custom_configs) {
-        if provider.is_available()
-            && let Ok(mut found) = provider.list_packages()
-        {
-            packages.append(&mut found);
+        if provider.is_available() {
+            match provider.list_packages() {
+                Ok(mut found) => packages.append(&mut found),
+                Err(error) => errors.push(format!("{}: {error}", provider.id())),
+            }
         }
     }
-    packages
+    (packages, errors)
 }
 
 fn render(frame: &mut Frame, app: &App) {
@@ -992,6 +1024,8 @@ fn render(frame: &mut Frame, app: &App) {
             .as_ref()
             .filter(|(_, expires)| *expires > Instant::now())
             .map(|(message, _)| message.as_str()),
+        app.loading,
+        (app.started_at.elapsed().as_millis() as usize / 80) % 10,
     );
     if let Some(password) = app.sudo_password_input.as_ref() {
         render_sudo_password_prompt(frame, areas.status, password.len(), theme);
@@ -1033,20 +1067,6 @@ fn render(frame: &mut Frame, app: &App) {
             }
         }
         None => {}
-    }
-    if app.loading {
-        let area = centered(frame.area(), 44, 17);
-        frame.render_widget(Clear, area);
-        frame.render_widget(
-            Paragraph::new("Scanning installed packages…")
-                .block(popup_block(
-                    " Loading ",
-                    theme,
-                    app.config.layout.popup_border_type(),
-                ))
-                .alignment(Alignment::Center),
-            area,
-        );
     }
 }
 
@@ -1284,8 +1304,6 @@ fn render_details(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors)
             .flatten();
         let message = if let Some(dependency) = missing_dependency {
             format!("Dependency '{dependency}' is not in the installed inventory")
-        } else if app.loading {
-            "Scanning installed packages…".to_owned()
         } else {
             "No package selected".to_owned()
         };
