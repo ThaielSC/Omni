@@ -1,47 +1,47 @@
-# Descargas y formatos de distribución
+# Downloads and distribution formats
 
-Omni es una aplicación de terminal para Linux. La release inicial publica dos descargas x86-64; ambas se generan a partir del mismo binario Rust optimizado.
+Omni is a terminal application for Linux. The initial release provides two x86-64 downloads, both built from the same optimized Rust binary.
 
 ## AppImage
 
-Un archivo autocontenido y ejecutable, cómodo para descargar y probar sin instalar un paquete del sistema. Descárgalo desde GitHub Releases, marca el archivo como ejecutable y lánzalo desde una terminal:
+A single executable file that is convenient to download and try without installing a system package. Download it from GitHub Releases, mark it executable, and run it from a terminal:
 
 ```sh
 chmod +x Omni-1.0.0-x86_64.AppImage
 ./Omni-1.0.0-x86_64.AppImage
 ```
 
-AppImage Type 2 normalmente usa FUSE para montar su contenido. Si el sistema no lo tiene disponible, el runtime ofrece `--appimage-extract-and-run` como alternativa. El AppImage no incluye ni instala los gestores de paquetes que Omni administra.
+AppImage Type 2 normally uses FUSE to mount its contents. If FUSE is unavailable, the runtime provides `--appimage-extract-and-run` as an alternative. The AppImage does not include or install the package managers Omni manages.
 
-## Tarball portable
+## Portable tarball
 
-El archivo `.tar.gz` incluye el binario `omni`, `LICENSE` y `README.md`. No instala archivos en el sistema:
+The `.tar.gz` archive contains the `omni` binary, `LICENSE`, and `README.md`. It does not install files on the system:
 
 ```sh
 tar -xzf omni-1.0.0-x86_64-unknown-linux-gnu.tar.gz
 ./omni
 ```
 
-El binario GNU/Linux se construye en Ubuntu 22.04 para mantener compatibilidad con sistemas que ofrecen una versión de glibc igual o posterior. Los gestores de paquetes que quieras consultar deben estar instalados por separado y disponibles en `PATH`.
+The GNU/Linux binary is built on Ubuntu 22.04 to support systems with the same or newer glibc version. Package managers you want to inspect must be installed separately and available on `PATH`.
 
-## Instalar desde el código con Cargo
+## Install from source with Cargo
 
-Si ya tienes una copia local del repositorio y Rust/Cargo instalados, puedes instalar el ejecutable directamente desde su `Cargo.toml`:
+If you have a local repository checkout and Rust/Cargo installed, install the executable directly from its `Cargo.toml`:
 
 ```sh
 cd Omni
 cargo install --path . --locked
 ```
 
-Cargo compila el paquete local y coloca `omni` en el directorio de instalación configurado, normalmente `~/.cargo/bin`. Para actualizarlo desde otra revisión local, repite el comando con `--force`. Esto no publica el proyecto en crates.io ni instala dependencias del sistema.
+Cargo builds the local package and places `omni` in its configured install directory, usually `~/.cargo/bin`. To update from another local revision, repeat the command with `--force`. This does not publish the project to crates.io or install system dependencies.
 
-## Otros formatos posibles
+## Other possible formats
 
-La release 1.0.0 no genera paquetes nativos adicionales:
+The 1.0.0 release does not build native distribution packages:
 
-- **Arch Linux:** se puede añadir un `PKGBUILD` para publicar en AUR o construir un paquete `.pkg.tar.zst`.
-- **Debian/Ubuntu:** se puede añadir un paquete `.deb`.
-- **Fedora/RHEL/openSUSE:** se puede añadir un paquete `.rpm`.
-- **Crates.io:** no es necesario para la instalación con `cargo install --path`; publicar allí sería una opción aparte para quien quiera instalar por nombre desde el registro.
+- **Arch Linux:** a `PKGBUILD` could be added for the AUR or to build a `.pkg.tar.zst` package.
+- **Debian/Ubuntu:** a `.deb` package could be added.
+- **Fedora/RHEL/openSUSE:** an `.rpm` package could be added.
+- **crates.io:** publishing there is not required for `cargo install --path`; it would be a separate option for installing by name from the registry.
 
-Estos formatos requieren sus propios metadatos, pruebas de instalación/desinstalación y mantenimiento de publicación. El AppImage y el tarball ofrecen una primera descarga Linux sencilla sin fingir que ya existe integración con esos repositorios.
+These formats need their own metadata, install/uninstall checks, and publication maintenance. The AppImage and tarball provide simple Linux downloads without implying integration with those distribution repositories.

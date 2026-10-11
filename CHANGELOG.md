@@ -1,26 +1,26 @@
 # Changelog
 
-Este archivo recoge los cambios relevantes de Omni. Las versiones siguen [SemVer](docs/VERSIONING.md).
+This file records notable changes to Omni. Versions follow [Semantic Versioning](docs/VERSIONING.md).
 
 ## [1.0.0] - Unreleased
 
-Candidata a primera versión estable; se publicará con el tag `v1.0.0`.
+Candidate for the first stable release; it will be published with the `v1.0.0` tag.
 
-### Añadido
+### Added
 
-- Inventario unificado de Pacman, AUR/yay, Flatpak, herramientas Cargo, herramientas uv, paquetes pip y gestores declarativos configurables.
-- Integración opcional de dependencias directas en proyectos Cargo, npm y Bun.
-- TUI Ratatui de tres paneles, navegación de teclado estilo Vim/Helix, búsqueda, ordenación, ayuda contextual y recarga en vivo de configuración.
-- Temas, keybindings, fondos, bordes y proporciones de paneles personalizables mediante TOML.
-- Clasificación opcional de dependencias, selección múltiple y detalles del paquete seleccionado.
-- Desinstalación y actualización explícitas con confirmación, salida del proceso en Details y refresco del inventario.
-- Prompt de contraseña sudo enmascarado; la contraseña se entrega solo por stdin, no se registra y se borra del buffer tras su uso.
-- Consultas de actualizaciones globales y por proyecto, sin bloquear la carga inicial del inventario.
-- Copia al portapapeles del nombre del paquete y del contenido visible de Details.
-- CLI no interactiva para inventarios de texto/JSON y logs de diagnóstico persistentes con permisos privados.
+- Unified inventory for Pacman, AUR/yay, Flatpak, Cargo tools, uv tools, pip packages, and declaratively configured managers.
+- Optional direct dependency management for Cargo, npm, and Bun projects.
+- Three-panel Ratatui TUI with Vim/Helix-style keyboard navigation, search, sorting, contextual help, and live configuration reload.
+- Customizable themes, keybindings, backgrounds, borders, and panel proportions through TOML.
+- Optional dependency classification, multi-selection, and package details.
+- Explicit update and uninstall actions with confirmation, process output in Details, and inventory refresh.
+- Masked sudo password prompt; the password is sent only through stdin, is never logged, and is zeroized after use.
+- Background update checks for global and project packages.
+- Clipboard copying for package names and visible Details contents.
+- Non-interactive text/JSON inventory CLI and persistent diagnostic logs with private permissions.
 
-### Seguridad y límites
+### Security and limitations
 
-- Omni se ejecuta como usuario normal; solo las operaciones que lo requieren invocan el helper de privilegios tras confirmación.
-- Las plantillas `uninstall_cmd` de gestores personalizados ejecutan shell configurada por el usuario y deben tratarse como código confiable.
-- Cobertura de tamaño, motivo de instalación, dependencias y actualizaciones depende de cada gestor; los límites conocidos están en [`docs/PROVIDER_SUPPORT.md`](docs/PROVIDER_SUPPORT.md).
+- Omni runs as a normal user; only operations that require elevated privileges invoke the privilege helper after confirmation.
+- Custom manager `uninstall_cmd` templates run user-configured shell commands and must be treated as trusted code.
+- Package size, install reason, dependencies, and update coverage vary by manager; known limitations are documented in [`docs/PROVIDER_SUPPORT.md`](docs/PROVIDER_SUPPORT.md).
