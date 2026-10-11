@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
 use crate::config::ThemeColors;
-use crate::model::{FilterTab, SortMode};
+use crate::model::SortMode;
 
 pub fn render(
     frame: &mut Frame,
@@ -12,7 +12,7 @@ pub fn render(
     theme: &ThemeColors,
     searching: bool,
     query: &str,
-    tab: FilterTab,
+    scope: &str,
     selected: usize,
     count: usize,
     total_size: u64,
@@ -79,11 +79,7 @@ pub fn render(
     };
     let middle = format!(
         " [{}] {} {}{}{}",
-        tab.display_name(),
-        position,
-        package_scope,
-        update_label,
-        selection_label
+        scope, position, package_scope, update_label, selection_label
     );
     let middle = truncate(&middle, middle_width);
     let spacer = " ".repeat(middle_width.saturating_sub(middle.chars().count()));

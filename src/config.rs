@@ -588,9 +588,12 @@ pub enum Action {
     SortToggle,
     ToggleUpdates,
     TogglePackageSelection,
+    ClearPackageSelection,
 
     // Operations
     Uninstall,
+    UpdatePackages,
+    AddProjectPackage,
     Reload,
     Help,
     Quit,
@@ -919,7 +922,10 @@ pub struct KeymapConfig {
     pub sort_toggle: KeyBindings,
     pub toggle_updates: KeyBindings,
     pub toggle_package_selection: KeyBindings,
+    pub clear_package_selection: KeyBindings,
     pub uninstall: KeyBindings,
+    pub update_packages: KeyBindings,
+    pub add_project_package: KeyBindings,
     pub reload: KeyBindings,
     pub help: KeyBindings,
     pub quit: KeyBindings,
@@ -953,7 +959,10 @@ impl Default for KeymapConfig {
             sort_toggle: KeyBindings::new(["s"]),
             toggle_updates: KeyBindings::new(["u"]),
             toggle_package_selection: KeyBindings::new([" "]),
+            clear_package_selection: KeyBindings::new([","]),
             uninstall: KeyBindings::new(["d", "x"]),
+            update_packages: KeyBindings::new(["U"]),
+            add_project_package: KeyBindings::new(["a"]),
             reload: KeyBindings::new(["r"]),
             help: KeyBindings::new(["?"]),
             quit: KeyBindings::new(["q", "<C-c>"]),
@@ -974,6 +983,8 @@ impl KeymapConfig {
             (Action::ClearSearch, &self.clear_search),
             (Action::Search, &self.search),
             (Action::Uninstall, &self.uninstall),
+            (Action::UpdatePackages, &self.update_packages),
+            (Action::AddProjectPackage, &self.add_project_package),
             (Action::Reload, &self.reload),
             (Action::SortToggle, &self.sort_toggle),
             (Action::ToggleUpdates, &self.toggle_updates),
@@ -981,6 +992,7 @@ impl KeymapConfig {
                 Action::TogglePackageSelection,
                 &self.toggle_package_selection,
             ),
+            (Action::ClearPackageSelection, &self.clear_package_selection),
             (Action::GotoAll, &self.goto_all),
             (Action::GotoPacman, &self.goto_pacman),
             (Action::GotoAur, &self.goto_aur),
@@ -1043,7 +1055,10 @@ impl KeymapConfig {
             Action::SortToggle => &self.sort_toggle,
             Action::ToggleUpdates => &self.toggle_updates,
             Action::TogglePackageSelection => &self.toggle_package_selection,
+            Action::ClearPackageSelection => &self.clear_package_selection,
             Action::Uninstall => &self.uninstall,
+            Action::UpdatePackages => &self.update_packages,
+            Action::AddProjectPackage => &self.add_project_package,
             Action::Reload => &self.reload,
             Action::Help => &self.help,
             Action::Quit => &self.quit,
@@ -1150,8 +1165,59 @@ pub struct OmniConfig {
     pub theme: ThemeConfig,
     pub keymap: KeymapConfig,
     pub behavior: BehaviorConfig,
+    pub manager: ManagerConfig,
     #[serde(default)]
     pub custom_managers: Vec<CustomManagerConfig>,
+}
+
+/// Configuration for package-manager integrations beyond the global inventory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(default)]
+pub struct ManagerConfig {
+    pub projects: ProjectManagersConfig,
+}
+
+/// Project-local manifests are discovered from the working directory upward.
+/// Each ecosystem can be disabled independently; executable names are
+/// configurable for systems that install tools under a non-standard name.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ProjectManagersConfig {
+    pub enabled: bool,
+    pub detect_ancestors: bool,
+    pub cargo: bool,
+    pub npm: bool,
+    pub bun: bool,
+    pub cargo_binary: String,
+    pub npm_binary: String,
+    pub bun_binary: String,
+}
+
+impl Default for ProjectManagersConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            detect_ancestors: true,
+            cargo: true,
+            npm: true,
+            bun: true,
+            cargo_binary: "cargo".into(),
+            npm_binary: "npm".into(),
+            bun_binary: "bun".into(),
+        }
+    }
+}
+
+impl ProjectManagersConfig {
+    pub fn supports(&self, ecosystem: &str) -> bool {
+        self.enabled
+            && match ecosystem {
+                "cargo" => self.cargo,
+                "npm" => self.npm,
+                "bun" => self.bun,
+                _ => false,
+            }
+    }
 }
 
 /// Returns the standard user configuration directory `~/.config/omni`.

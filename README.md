@@ -22,6 +22,7 @@ Omni es una aplicación de terminal escrita en Rust para consultar y gestionar p
 ## Características
 
 - Inventario unificado de Pacman, AUR mediante `yay`, Flatpak, Cargo, `uv`, `pip` y gestores definidos por el usuario.
+- Integración configurable con dependencias locales de proyectos Cargo, npm y Bun.
 - Omite de forma predeterminada los paquetes que el proveedor identifica como dependencias; se pueden incluir bajo demanda.
 - Filtrado por nombre o descripción, orden por nombre, tamaño o fecha, y panel de detalles.
 - Vista de dependencias del paquete seleccionado cuando el proveedor dispone de esos datos.
@@ -106,6 +107,9 @@ Los atajos predeterminados se pueden reasignar; la ventana `?` muestra las accio
 | `e` | Mostrar u ocultar paquetes clasificados como dependencias |
 | `u` | Consultar actualizaciones y mostrar los paquetes actualizables; repetir para volver al inventario |
 | `Space` | Seleccionar o quitar de la selección el paquete actual y avanzar |
+| `,` | Limpiar toda la selección de paquetes |
+| `U` | Actualizar los paquetes seleccionados o, si no hay selección, el paquete bajo el cursor |
+| `a` | Agregar una dependencia cuando está activa una categoría de proyecto |
 | `i` | Abrir o cerrar la lista de dependencias del paquete actual |
 | `d` / `x` | Revisar y confirmar la desinstalación del paquete o selección |
 | `r` | Recargar el inventario; en la vista de actualizaciones también repite la consulta |
@@ -114,7 +118,7 @@ Los atajos predeterminados se pueden reasignar; la ventana `?` muestra las accio
 
 ## Comprobación de actualizaciones
 
-Omni no consulta actualizaciones al iniciar. Pulsa `u` para solicitar la comprobación; se ejecuta en segundo plano y la lista pasa a mostrar los paquetes para los que se encontró una versión más reciente. La statusline muestra el estado de carga y la cantidad de resultados. Pulsa `u` otra vez para volver al inventario normal.
+Después de mostrar el inventario inicial, Omni busca actualizaciones en segundo plano. La lista completa de paquetes aparece primero; al terminar la consulta, los paquetes actualizables reciben un indicador `↑` amarillo y la versión disponible aparece en Details. La consulta no bloquea la navegación. Pulsa `u` para filtrar la lista a los paquetes actualizables y otra vez para volver al inventario completo. `r` vuelve a consultar tras recargar los paquetes.
 
 Cobertura actual:
 
@@ -122,11 +126,13 @@ Cobertura actual:
 - **AUR:** usa `yay -Qua` si `yay` está instalado.
 - **Otros gestores:** la comprobación de actualizaciones todavía no está implementada.
 
-Esta función solo informa de versiones disponibles; Omni no instala actualizaciones.
+Pulsa `U` para actualizar los paquetes seleccionados o, si no hay selección, el paquete bajo el cursor. Solo se eligen como objetivos paquetes con una actualización detectada. Omni muestra una confirmación con los objetivos y comandos; la salida de la operación se transmite al panel Details y permanece ahí al finalizar. Las actualizaciones se pueden solicitar en lote.
+
+La actualización está implementada actualmente para Pacman y AUR. Otros gestores todavía no tienen una consulta ni un comando de actualización nativos. En Arch, la confirmación de Pacman avisa que `pacman -Syu` puede actualizar también otros paquetes desactualizados: Arch no admite actualizaciones parciales. Para AUR se usa `yay` limitado a objetivos AUR; sus scripts de compilación se ejecutan como usuario.
 
 ## Selección y desinstalación
 
-Pulsa `Space` sobre los paquetes que quieras incluir. La statusline indica cuántos están seleccionados. Con `d` o `x`, Omni presenta una confirmación con los objetivos y comandos; si no hay selección, la acción se aplica al paquete bajo el cursor.
+Pulsa `Space` sobre los paquetes que quieras incluir. La statusline indica cuántos están seleccionados. Pulsa `,` para desmarcarlos todos. Con `d` o `x`, Omni presenta una confirmación con los objetivos y comandos de desinstalación; con `U`, presenta la confirmación de actualización. Si no hay selección, ambas acciones usan el paquete bajo el cursor.
 
 Omni no requiere iniciar toda la aplicación con `sudo`. Si una operación del sistema necesita privilegios, primero se confirma la acción y luego se solicita la contraseña en un prompt enmascarado en la parte inferior. La contraseña se envía por la entrada estándar del proceso y se elimina del búfer de memoria tras el uso. `Esc` cancela el prompt.
 
@@ -160,6 +166,12 @@ popup_border_style = "rounded"
 [behavior]
 confirm_uninstall = true
 sudo_command = "sudo"
+
+[manager.projects]
+enabled = true
+cargo = true
+npm = true
+bun = true
 ```
 
 ```toml
@@ -173,6 +185,26 @@ help = "?"
 ```
 
 Los cambios válidos se aplican mientras la aplicación está abierta. Si un archivo queda temporalmente inválido durante la edición, Omni mantiene la última configuración válida y muestra una notificación. La referencia completa de opciones está en [CONFIGURATION_SPEC.md](docs/CONFIGURATION_SPEC.md).
+
+### Gestores de proyectos
+
+Al abrir Omni dentro de un proyecto compatible, las dependencias directas pueden aparecer bajo una fila identificada como `<carpeta>[Cargo]`, `<carpeta>[npm]` o `<carpeta>[bun]`. Cargo se reconoce por `Cargo.toml`; npm y Bun por `package.json` y los archivos del gestor. La integración está habilitada para los tres por defecto y se configura en `[manager.projects]`:
+
+```toml
+[manager.projects]
+enabled = true
+detect_ancestors = true
+cargo = true
+npm = false
+bun = true
+cargo_binary = "cargo"
+npm_binary = "npm"
+bun_binary = "bun"
+```
+
+En la categoría del proyecto, `a` abre un prompt para agregar una dependencia usando `cargo add <paquete>`, `npm install <paquete>` o `bun add <paquete>` desde la raíz del proyecto. Sobre una dependencia seleccionada, `d` o `x` la quita con `cargo remove`, `npm uninstall` o `bun remove`. Omni ejecuta estas acciones solo tras una solicitud explícita; pasa argumentos separados sin shell y muestra la salida en Details. El gestor subyacente actualiza el manifiesto y su lockfile según sus reglas. Cada ecosistema puede desactivarse independientemente.
+
+`detect_ancestors = false` limita la detección al directorio actual. Los nombres de ejecutables se pueden cambiar con `cargo_binary`, `npm_binary` y `bun_binary`. El atajo contextual `a` se puede reasignar con `add_project_package` en `keymap.toml`.
 
 Se puede indicar un archivo de configuración alternativo con `--config RUTA`. Omni también busca `managers.toml` junto a ese archivo.
 

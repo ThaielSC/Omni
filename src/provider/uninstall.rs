@@ -1,11 +1,11 @@
-//! Safe command construction for uninstalling installed packages.
+//! Safe command construction for installed-package operations.
 //!
 //! Native providers are invoked directly with argument vectors. Custom manager
 //! commands are explicitly shell-based because their TOML command templates may
 //! contain normal shell syntax; package fields are POSIX-shell escaped before
 //! being substituted into those templates.
 
-use crate::config::{BehaviorConfig, CustomManagerConfig};
+use crate::config::{BehaviorConfig, CustomManagerConfig, ProjectManagersConfig};
 use crate::model::{PackageSource, UnifiedPackage};
 use std::process::Command;
 
@@ -17,6 +17,8 @@ pub struct UninstallCommand {
     program: String,
     args: Vec<String>,
     sudo_noninteractive_index: Option<usize>,
+    stdin_password: bool,
+    current_dir: Option<std::path::PathBuf>,
 }
 
 impl UninstallCommand {
@@ -31,13 +33,31 @@ impl UninstallCommand {
             program: program.into(),
             args,
             sudo_noninteractive_index,
+            stdin_password: sudo_noninteractive_index.is_some(),
+            current_dir: None,
         }
+    }
+
+    /// Mark a command that delegates sudo authentication to a child process
+    /// (for example, yay calling sudo internally) as consuming a password on
+    /// stdin.
+    pub fn with_stdin_password(mut self) -> Self {
+        self.stdin_password = true;
+        self
+    }
+
+    /// Whether the operation needs the in-app password prompt.
+    pub fn requires_stdin_password(&self) -> bool {
+        self.stdin_password
     }
 
     /// Build a fresh process command for this operation.
     pub fn command(&self) -> Command {
         let mut command = Command::new(&self.program);
         command.args(&self.args);
+        if let Some(directory) = &self.current_dir {
+            command.current_dir(directory);
+        }
         command
     }
 
@@ -61,6 +81,9 @@ impl UninstallCommand {
     /// keep the password out of args, environment variables, and logs.
     pub fn command_with_stdin_password(&self) -> Command {
         let mut command = Command::new(&self.program);
+        if let Some(directory) = &self.current_dir {
+            command.current_dir(directory);
+        }
         let Some(index) = self.sudo_noninteractive_index else {
             command.args(&self.args);
             return command;
@@ -79,6 +102,11 @@ impl UninstallCommand {
         command.args(args);
         command
     }
+
+    fn in_directory(mut self, directory: std::path::PathBuf) -> Self {
+        self.current_dir = Some(directory);
+        self
+    }
 }
 
 /// Construct an uninstall command for a package from a supported native or
@@ -88,10 +116,27 @@ pub fn build_uninstall_command(
     behavior: &BehaviorConfig,
     managers: &[CustomManagerConfig],
 ) -> Result<UninstallCommand, String> {
+    build_uninstall_command_with_projects(
+        package,
+        behavior,
+        managers,
+        &ProjectManagersConfig::default(),
+    )
+}
+
+pub fn build_uninstall_command_with_projects(
+    package: &UnifiedPackage,
+    behavior: &BehaviorConfig,
+    managers: &[CustomManagerConfig],
+    projects: &ProjectManagersConfig,
+) -> Result<UninstallCommand, String> {
     let name = validate_value("package name", &package.name)?;
     let version = validate_value("package version", &package.version)?;
 
     if let Some(manager_id) = package.manager_id.as_deref() {
+        if let Some((ecosystem, root)) = parse_project_manager_id(manager_id) {
+            return build_project_command(ecosystem, root, name, false, projects);
+        }
         let manager = managers
             .iter()
             .find(|manager| manager.id == manager_id)
@@ -142,6 +187,124 @@ pub fn build_uninstall_command(
                 privileged_command("pip", args, behavior, false)?;
             Ok(UninstallCommand::direct(program, args, display, sudo_index))
         }
+        PackageSource::Project => {
+            Err("Project packages require a project manager identity".to_owned())
+        }
+    }
+}
+
+/// Build the project dependency-add operation using a direct argv (never a
+/// shell). It runs with the project root as its working directory.
+pub fn build_project_add_command(
+    manager_id: &str,
+    project_root: &std::path::Path,
+    package_name: &str,
+    config: &ProjectManagersConfig,
+) -> Result<UninstallCommand, String> {
+    let (ecosystem, _) = parse_project_manager_id(manager_id)
+        .ok_or_else(|| "Invalid project manager identity".to_owned())?;
+    if !config.supports(ecosystem) {
+        return Err(format!(
+            "Project manager '{ecosystem}' is disabled in config.toml"
+        ));
+    }
+    build_project_command(ecosystem, project_root, package_name, true, config)
+}
+
+fn build_project_command(
+    ecosystem: &str,
+    root: &std::path::Path,
+    package_name: &str,
+    add: bool,
+    config: &ProjectManagersConfig,
+) -> Result<UninstallCommand, String> {
+    validate_value("project package name", package_name)?;
+    if package_name.starts_with('-')
+        || package_name.chars().any(char::is_whitespace)
+        || package_name.chars().any(char::is_control)
+    {
+        return Err("Package names must not begin with '-' or contain whitespace".to_owned());
+    }
+    let (binary, verb) = match ecosystem {
+        "cargo" => (&config.cargo_binary, if add { "add" } else { "remove" }),
+        "npm" => (
+            &config.npm_binary,
+            if add { "install" } else { "uninstall" },
+        ),
+        "bun" => (&config.bun_binary, if add { "add" } else { "remove" }),
+        _ => return Err(format!("Unsupported project manager '{ecosystem}'")),
+    };
+    validate_value("package-manager executable", binary)?;
+    let args = vec![verb.to_owned(), package_name.to_owned()];
+    let display = render_command(binary, &args);
+    Ok(
+        UninstallCommand::direct(binary.clone(), args, display, None)
+            .in_directory(root.to_path_buf()),
+    )
+}
+
+fn parse_project_manager_id(value: &str) -> Option<(&str, &std::path::Path)> {
+    let rest = value.strip_prefix("project:")?;
+    let (ecosystem, root) = rest.split_once(':')?;
+    Some((ecosystem, std::path::Path::new(root)))
+}
+
+/// Build one update command for a homogeneous group of packages already known
+/// to have an available update. Only Pacman and AUR update operations are
+/// currently supported.
+pub fn build_update_command(
+    packages: &[UnifiedPackage],
+    behavior: &BehaviorConfig,
+) -> Result<UninstallCommand, String> {
+    let first = packages.first().ok_or("No update targets selected")?;
+    let names = packages
+        .iter()
+        .map(|package| validate_value("package name", &package.name).map(str::to_owned))
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut args = match first.source {
+        PackageSource::Pacman => vec![
+            // Arch does not support partial upgrades; a repository update must
+            // use -Syu even when the user explicitly selected package targets.
+            "-Syu".to_owned(),
+            "--needed".to_owned(),
+            "--noconfirm".to_owned(),
+            "--".to_owned(),
+        ],
+        PackageSource::Aur => vec![
+            "-S".to_owned(),
+            "--aur".to_owned(),
+            "--needed".to_owned(),
+            "--noconfirm".to_owned(),
+            "--sudoflags".to_owned(),
+            "-S".to_owned(),
+            "--".to_owned(),
+        ],
+        _ => {
+            return Err(format!(
+                "Updates are not supported for {} packages",
+                first.source
+            ));
+        }
+    };
+    if packages
+        .iter()
+        .any(|package| package.source != first.source)
+    {
+        return Err("Update commands must contain packages from one manager".to_owned());
+    }
+    args.extend(names.iter().cloned());
+    let binary = match first.source {
+        PackageSource::Pacman => "pacman",
+        PackageSource::Aur => "yay",
+        _ => unreachable!(),
+    };
+    let display = render_command(binary, &args);
+    if first.source == PackageSource::Pacman {
+        let (program, args, display, sudo_index) =
+            privileged_command(binary, args, behavior, true)?;
+        Ok(UninstallCommand::direct(program, args, display, sudo_index))
+    } else {
+        Ok(UninstallCommand::direct(binary, args, display, None).with_stdin_password())
     }
 }
 

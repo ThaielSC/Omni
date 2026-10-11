@@ -20,14 +20,21 @@ use ratatui::{Frame, Terminal};
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::config::{
-    Action, OmniConfig, ThemeColors, default_config_path, default_keymap_path,
-    default_managers_path, default_theme_path, parse_keymap_toml, parse_managers_toml,
-    parse_theme_toml,
+    Action, OmniConfig, ProjectManagersConfig, ThemeColors, default_config_path,
+    default_keymap_path, default_managers_path, default_theme_path, parse_keymap_toml,
+    parse_managers_toml, parse_theme_toml,
 };
 use crate::model::{FilterTab, InstallReason, SortMode, UnifiedPackage};
 use crate::provider::{
-    PackageManagerProvider, build_uninstall_command, cargo::CargoProvider, custom::CustomManager,
-    flatpak::FlatpakProvider, pacman::PacmanProvider, pip::PipProvider, uv::UvProvider,
+    PackageManagerProvider, build_project_add_command, build_uninstall_command_with_projects,
+    build_update_command,
+    cargo::CargoProvider,
+    custom::CustomManager,
+    flatpak::FlatpakProvider,
+    pacman::PacmanProvider,
+    pip::PipProvider,
+    project::{ProjectContext, discover_projects},
+    uv::UvProvider,
     yay::YayProvider,
 };
 use crate::utils::format::format_bytes;
@@ -46,14 +53,32 @@ enum Focus {
 enum Overlay {
     Help,
     ConfirmUninstall,
+    ConfirmUpdate,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OperationKind {
+    Uninstall,
+    Update,
+    Add,
+}
+
+impl OperationKind {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Uninstall => "UNINSTALL",
+            Self::Update => "UPDATE",
+            Self::Add => "ADD",
+        }
+    }
 }
 
 #[derive(Debug)]
 enum UiEvent {
-    Packages((Vec<UnifiedPackage>, Vec<String>)),
-    UninstallOutput(String),
-    UninstallFinished(Option<i32>),
-    Updates(HashMap<PackageIdentity, String>, Vec<String>),
+    Packages((Vec<UnifiedPackage>, Vec<String>, Vec<ProjectContext>)),
+    OperationOutput(String),
+    OperationFinished(Option<i32>),
+    Updates(u64, HashMap<PackageIdentity, String>, Vec<String>),
 }
 
 type PackageIdentity = (crate::model::PackageSource, Option<String>, String);
@@ -68,6 +93,7 @@ fn package_identity(package: &UnifiedPackage) -> PackageIdentity {
 
 #[derive(Debug, Clone)]
 struct UninstallConsole {
+    operation: OperationKind,
     package: String,
     lines: Vec<String>,
     running: bool,
@@ -81,12 +107,15 @@ struct App {
     tab: FilterTab,
     focus: Focus,
     manager_index: usize,
+    project_managers: Vec<ProjectContext>,
+    active_project_manager: Option<String>,
     package_index: usize,
     detail_scroll: u16,
     sort: SortMode,
     show_dependencies: bool,
     query: String,
     searching: bool,
+    project_add_input: Option<String>,
     overlay: Option<Overlay>,
     help_filter: String,
     help_filtering: bool,
@@ -102,12 +131,14 @@ struct App {
     uninstall_targets: Vec<UnifiedPackage>,
     uninstall_commands: Vec<crate::provider::UninstallCommand>,
     uninstall_console: Option<UninstallConsole>,
+    operation_kind: OperationKind,
     console_scroll: usize,
     sudo_password_input: Option<Zeroizing<Vec<u8>>>,
     selected_packages: HashSet<PackageIdentity>,
     updates_only: bool,
     update_versions: HashMap<PackageIdentity, String>,
     updates_checked: bool,
+    inventory_generation: u64,
 }
 
 impl App {
@@ -119,12 +150,15 @@ impl App {
             tab: FilterTab::All,
             focus: Focus::Packages,
             manager_index: 0,
+            project_managers: Vec::new(),
+            active_project_manager: None,
             package_index: 0,
             detail_scroll: 0,
             sort: SortMode::SizeDesc,
             show_dependencies: false,
             query: String::new(),
             searching: false,
+            project_add_input: None,
             overlay: None,
             help_filter: String::new(),
             help_filtering: false,
@@ -140,12 +174,14 @@ impl App {
             uninstall_targets: Vec::new(),
             uninstall_commands: Vec::new(),
             uninstall_console: None,
+            operation_kind: OperationKind::Uninstall,
             console_scroll: 0,
             sudo_password_input: None,
             selected_packages: HashSet::new(),
             updates_only: false,
             update_versions: HashMap::new(),
             updates_checked: false,
+            inventory_generation: 0,
         }
     }
 
@@ -155,7 +191,13 @@ impl App {
             .packages
             .iter()
             .enumerate()
-            .filter(|(_, package)| self.tab.matches(package.source))
+            .filter(|(_, package)| {
+                if let Some(manager_id) = &self.active_project_manager {
+                    package.manager_id.as_ref() == Some(manager_id)
+                } else {
+                    self.tab.matches(package.source)
+                }
+            })
             .filter(|(_, package)| {
                 self.show_dependencies || package.install_reason != InstallReason::Dependency
             })
@@ -236,18 +278,67 @@ impl App {
         })
     }
 
+    fn active_project(&self) -> Option<&ProjectContext> {
+        let id = self.active_project_manager.as_ref()?;
+        self.project_managers
+            .iter()
+            .find(|project| &project.manager_id == id)
+    }
+
+    fn select_manager_index(&mut self, index: usize) {
+        self.manager_index = index;
+        if let Some(tab) = FilterTab::from_index(index) {
+            self.active_project_manager = None;
+            self.tab = tab;
+        } else if let Some(project) = self
+            .project_managers
+            .get(index.saturating_sub(FilterTab::ALL.len()))
+        {
+            self.active_project_manager = Some(project.manager_id.clone());
+        }
+        self.package_index = 0;
+        self.update_filter();
+    }
+
     fn handle_key(&mut self, key: KeyEvent) -> bool {
+        if self.project_add_input.is_some() {
+            match key.code {
+                KeyCode::Esc => self.project_add_input = None,
+                KeyCode::Enter => {
+                    let name = self.project_add_input.take().unwrap_or_default();
+                    self.start_project_add(name);
+                }
+                KeyCode::Backspace => {
+                    if let Some(input) = self.project_add_input.as_mut() {
+                        input.pop();
+                    }
+                }
+                KeyCode::Char(character)
+                    if !key.modifiers.contains(KeyModifiers::CONTROL)
+                        && !key.modifiers.contains(KeyModifiers::ALT) =>
+                {
+                    if let Some(input) = self.project_add_input.as_mut() {
+                        input.push(character);
+                    }
+                }
+                _ => {}
+            }
+            return false;
+        }
         if self.sudo_password_input.is_some() {
             match key.code {
                 KeyCode::Esc => {
                     self.sudo_password_input = None;
                     self.uninstall_targets.clear();
                     self.uninstall_commands.clear();
-                    self.set_notice("Password entry cancelled; uninstall was not run");
+                    self.set_notice(format!(
+                        "Password entry cancelled; {} was not run",
+                        self.operation_kind.label().to_lowercase()
+                    ));
                 }
                 KeyCode::Enter => {
                     let password = self.sudo_password_input.take().unwrap();
-                    self.launch_uninstall(Some(password));
+                    self.launch_operation(Some(password));
                 }
                 KeyCode::Backspace => {
                     let Some(password) = self.sudo_password_input.as_mut() else {
@@ -319,14 +410,18 @@ impl App {
                 return false;
             }
             match key.code {
-                KeyCode::Esc | KeyCode::Char('n') if overlay == Overlay::ConfirmUninstall => {
+                KeyCode::Esc | KeyCode::Char('n')
+                    if matches!(overlay, Overlay::ConfirmUninstall | Overlay::ConfirmUpdate) =>
+                {
                     self.overlay = None;
                     self.uninstall_targets.clear();
                     self.uninstall_commands.clear();
                 }
-                KeyCode::Enter | KeyCode::Char('y') if overlay == Overlay::ConfirmUninstall => {
+                KeyCode::Enter | KeyCode::Char('y')
+                    if matches!(overlay, Overlay::ConfirmUninstall | Overlay::ConfirmUpdate) =>
+                {
                     self.overlay = None;
-                    self.start_uninstall();
+                    self.start_operation();
                 }
                 KeyCode::Esc if overlay == Overlay::Help => {
                     self.overlay = None;
@@ -423,6 +518,19 @@ impl App {
                 self.start_reload();
             }
             Some(Action::Uninstall) => self.prepare_uninstall(),
+            Some(Action::UpdatePackages) => self.prepare_update(),
+            Some(Action::AddProjectPackage) => {
+                if self.config.manager.projects.enabled && self.active_project().is_some() {
+                    self.project_add_input = Some(String::new());
+                } else {
+                    self.set_notice("Select a project manager to add a project dependency");
+                }
+            }
+            Some(Action::ClearPackageSelection) => {
+                let cleared = self.selected_packages.len();
+                self.selected_packages.clear();
+                self.set_notice(format!("Cleared selection ({cleared})"));
+            }
             Some(Action::GotoAll) => self.select_tab(FilterTab::All),
             Some(Action::GotoPacman) => self.select_tab(FilterTab::Pacman),
             Some(Action::GotoAur) => self.select_tab(FilterTab::Aur),
@@ -461,6 +569,7 @@ impl App {
     fn select_tab(&mut self, tab: FilterTab) {
         self.tab = tab;
         self.manager_index = tab.index();
+        self.active_project_manager = None;
         self.package_index = 0;
         self.focus = Focus::Packages;
         self.update_filter();
@@ -485,7 +594,7 @@ impl App {
         self.updates_only = !self.updates_only;
         self.package_index = 0;
         self.focus = Focus::Packages;
-        if self.updates_only && !self.loading && !self.updates_checked && !self.checking_updates {
+        if !self.loading && !self.updates_checked && !self.checking_updates {
             self.start_update_check();
         }
         self.update_filter();
@@ -498,13 +607,14 @@ impl App {
         self.checking_updates = true;
         let tx = self.reload_tx.clone();
         let packages = self.packages.clone();
+        let generation = self.inventory_generation;
         thread::spawn(move || {
-            let _ = tx.send(check_available_updates(packages));
+            let _ = tx.send(check_available_updates(generation, packages));
         });
     }
 
     fn maybe_check_updates_after_scan(&mut self) {
-        if self.updates_only && !self.updates_checked && !self.checking_updates {
+        if !self.updates_checked && !self.checking_updates {
             self.start_update_check();
         }
     }
@@ -556,13 +666,9 @@ impl App {
     fn move_selection(&mut self, amount: isize) {
         match self.focus {
             Focus::Managers => {
-                let next = (self.manager_index as isize + amount).clamp(0, 5);
-                self.manager_index = next as usize;
-                if let Some(tab) = FilterTab::from_index(self.manager_index) {
-                    self.tab = tab;
-                    self.package_index = 0;
-                    self.update_filter();
-                }
+                let last = FilterTab::ALL.len() + self.project_managers.len() - 1;
+                let next = (self.manager_index as isize + amount).clamp(0, last as isize);
+                self.select_manager_index(next as usize);
             }
             Focus::Packages => {
                 if !self.filtered.is_empty() {
@@ -595,7 +701,11 @@ impl App {
 
     fn go_to_edge(&mut self, bottom: bool) {
         match self.focus {
-            Focus::Managers => self.manager_index = if bottom { 5 } else { 0 },
+            Focus::Managers => self.select_manager_index(if bottom {
+                FilterTab::ALL.len() + self.project_managers.len() - 1
+            } else {
+                0
+            }),
             Focus::Packages => {
                 self.package_index = if bottom {
                     self.filtered.len().saturating_sub(1)
@@ -617,13 +727,6 @@ impl App {
                 }
             }
         }
-        if self.focus == Focus::Managers
-            && let Some(tab) = FilterTab::from_index(self.manager_index)
-        {
-            self.tab = tab;
-            self.package_index = 0;
-            self.update_filter();
-        }
     }
 
     fn start_reload(&mut self) {
@@ -631,22 +734,33 @@ impl App {
             return;
         }
         self.loading = true;
-        let check_updates = self.updates_only;
-        self.checking_updates = check_updates;
+        self.inventory_generation = self.inventory_generation.wrapping_add(1);
+        self.updates_checked = false;
+        self.checking_updates = false;
+        self.update_versions.clear();
+        for package in &mut self.packages {
+            package.latest_version = None;
+        }
         // The provider scan is intentionally detached from the event loop; the
         // UI remains responsive and receives its result through the channel.
         let tx = self.reload_tx.clone();
         let custom = self.config.custom_managers.clone();
+        let projects = self.config.manager.projects.clone();
         thread::spawn(move || {
-            let (packages, errors) = scan_packages(custom);
-            let _ = tx.send(UiEvent::Packages((packages.clone(), errors)));
-            if check_updates {
-                let _ = tx.send(check_available_updates(packages));
-            }
+            let (packages, errors, contexts) = scan_packages(custom, projects);
+            let _ = tx.send(UiEvent::Packages((packages, errors, contexts)));
         });
     }
 
     fn prepare_uninstall(&mut self) {
+        if self
+            .uninstall_console
+            .as_ref()
+            .is_some_and(|console| console.running)
+        {
+            self.set_notice("Wait for the current package operation to finish");
+            return;
+        }
         let targets = if self.focus == Focus::Packages && !self.selected_packages.is_empty() {
             self.packages
                 .iter()
@@ -670,40 +784,169 @@ impl App {
         let commands = targets
             .iter()
             .map(|target| {
-                build_uninstall_command(target, &self.config.behavior, &self.config.custom_managers)
+                build_uninstall_command_with_projects(
+                    target,
+                    &self.config.behavior,
+                    &self.config.custom_managers,
+                    &self.config.manager.projects,
+                )
             })
             .collect::<Result<Vec<_>, _>>();
         match commands {
             Ok(commands) => {
                 self.uninstall_targets = targets;
                 self.uninstall_commands = commands;
+                self.operation_kind = OperationKind::Uninstall;
                 self.selected_packages.clear();
                 if self.config.behavior.confirm_uninstall {
                     self.overlay = Some(Overlay::ConfirmUninstall);
                 } else {
-                    self.start_uninstall();
+                    self.start_operation();
                 }
             }
             Err(error) => self.set_notice(error),
         }
     }
 
-    fn start_uninstall(&mut self) {
+    fn start_project_add(&mut self, name: String) {
+        if self
+            .uninstall_console
+            .as_ref()
+            .is_some_and(|console| console.running)
+        {
+            self.set_notice("Wait for the current package operation to finish");
+            return;
+        }
+        let Some(project) = self.active_project().cloned() else {
+            self.set_notice("Select a project manager before adding a dependency");
+            return;
+        };
+        if name.trim().is_empty() {
+            self.set_notice("Package name cannot be empty");
+            return;
+        }
+        match build_project_add_command(
+            &project.manager_id,
+            &project.root,
+            name.trim(),
+            &self.config.manager.projects,
+        ) {
+            Ok(command) => {
+                let mut package = UnifiedPackage::new(
+                    name.trim(),
+                    "new dependency",
+                    crate::model::PackageSource::Project,
+                );
+                package.manager_id = Some(project.manager_id);
+                self.uninstall_targets = vec![package];
+                self.uninstall_commands = vec![command];
+                self.operation_kind = OperationKind::Add;
+                self.launch_operation(None);
+            }
+            Err(error) => self.set_notice(error),
+        }
+    }
+
+    fn prepare_update(&mut self) {
+        if self
+            .uninstall_console
+            .as_ref()
+            .is_some_and(|console| console.running)
+        {
+            self.set_notice("Wait for the current package operation to finish");
+            return;
+        }
+        if self.loading {
+            self.set_notice("Package inventory is still loading");
+            return;
+        }
+        if self.checking_updates || !self.updates_checked {
+            self.set_notice("Update check is still running");
+            return;
+        }
+        let targets = if !self.selected_packages.is_empty() {
+            self.packages
+                .iter()
+                .filter(|package| self.selected_packages.contains(&package_identity(package)))
+                .cloned()
+                .collect::<Vec<_>>()
+        } else {
+            self.selected_package().cloned().into_iter().collect()
+        };
+        if targets.is_empty() {
+            self.set_notice("No package is selected");
+            return;
+        }
+        let mut updatable = targets
+            .into_iter()
+            .filter(|package| {
+                self.update_versions
+                    .contains_key(&package_identity(package))
+            })
+            .collect::<Vec<_>>();
+        if updatable.is_empty() {
+            self.set_notice("No available update for the selected package(s)");
+            return;
+        }
+        let skipped = if self.selected_packages.is_empty() {
+            0
+        } else {
+            self.selected_packages.len().saturating_sub(updatable.len())
+        };
+        let mut commands = Vec::new();
+        for source in [
+            crate::model::PackageSource::Pacman,
+            crate::model::PackageSource::Aur,
+        ] {
+            let group = updatable
+                .iter()
+                .filter(|package| package.source == source)
+                .cloned()
+                .collect::<Vec<_>>();
+            if !group.is_empty() {
+                match build_update_command(&group, &self.config.behavior) {
+                    Ok(command) => commands.push(command),
+                    Err(error) => {
+                        self.set_notice(error);
+                        return;
+                    }
+                }
+            }
+        }
+        if commands.is_empty() {
+            self.set_notice("Updates are currently supported for Pacman and AUR only");
+            return;
+        }
+        if skipped > 0 {
+            self.set_notice(format!(
+                "Updating {} package(s); {skipped} selected package(s) have no supported update",
+                updatable.len()
+            ));
+        }
+        self.uninstall_targets = std::mem::take(&mut updatable);
+        self.uninstall_commands = commands;
+        self.operation_kind = OperationKind::Update;
+        self.selected_packages.clear();
+        self.overlay = Some(Overlay::ConfirmUpdate);
+    }
+
+    fn start_operation(&mut self) {
         if self
             .uninstall_commands
             .iter()
-            .any(|command| command.sudo_program().is_some())
+            .any(|command| command.requires_stdin_password())
         {
             self.sudo_password_input = Some(Zeroizing::new(Vec::new()));
             return;
         }
-        self.launch_uninstall(None);
+        self.launch_operation(None);
     }
 
-    fn launch_uninstall(&mut self, password: Option<Zeroizing<Vec<u8>>>) {
+    fn launch_operation(&mut self, password: Option<Zeroizing<Vec<u8>>>) {
         if self.uninstall_targets.is_empty() || self.uninstall_commands.is_empty() {
             return;
         }
+        let operation = self.operation_kind;
         let targets = std::mem::take(&mut self.uninstall_targets);
         let commands = std::mem::take(&mut self.uninstall_commands);
         let tx = self.reload_tx.clone();
@@ -717,6 +960,7 @@ impl App {
             .map(|command| format!("$ {}", command.display))
             .collect::<Vec<_>>();
         self.uninstall_console = Some(UninstallConsole {
+            operation,
             package: package_names,
             lines: displayed_commands
                 .into_iter()
@@ -730,7 +974,7 @@ impl App {
         thread::spawn(move || {
             let mut final_code = Some(0);
             for command in commands {
-                let uses_stdin_password = password.is_some() && command.sudo_program().is_some();
+                let uses_stdin_password = password.is_some() && command.requires_stdin_password();
                 let mut process = if uses_stdin_password {
                     command.command_with_stdin_password()
                 } else {
@@ -747,7 +991,7 @@ impl App {
                 let mut child = match process.spawn() {
                     Ok(child) => child,
                     Err(error) => {
-                        let _ = tx.send(UiEvent::UninstallOutput(format!(
+                        let _ = tx.send(UiEvent::OperationOutput(format!(
                             "Failed to start command: {error}"
                         )));
                         final_code = None;
@@ -764,7 +1008,7 @@ impl App {
                         if let Err(error) = write_result {
                             let _ = child.kill();
                             let _ = child.wait();
-                            let _ = tx.send(UiEvent::UninstallOutput(format!(
+                            let _ = tx.send(UiEvent::OperationOutput(format!(
                                 "Failed to send password to sudo: {error}"
                             )));
                             final_code = None;
@@ -789,11 +1033,12 @@ impl App {
             if let Some(mut password) = password {
                 password.zeroize();
             }
-            let _ = tx.send(UiEvent::UninstallFinished(final_code));
+            let _ = tx.send(UiEvent::OperationFinished(final_code));
         });
     }
 
     fn apply_config(&mut self, config: OmniConfig, managers_changed: bool) {
+        let project_managers_changed = self.config.manager.projects != config.manager.projects;
         self.config = config;
         if !self.config.layout.show_managers && self.focus == Focus::Managers {
             self.focus = Focus::Packages;
@@ -802,7 +1047,7 @@ impl App {
             self.focus = Focus::Packages;
         }
         self.set_notice("Configuration reloaded");
-        if managers_changed {
+        if managers_changed || project_managers_changed {
             if self.loading {
                 self.reload_after_loading = true;
             } else {
@@ -825,9 +1070,19 @@ impl App {
 
     fn apply_ui_event(&mut self, event: UiEvent) {
         match event {
-            UiEvent::Packages((mut packages, errors)) => {
+            UiEvent::Packages((mut packages, errors, project_managers)) => {
                 self.sort.sort_packages(&mut packages);
                 self.packages = packages;
+                self.project_managers = project_managers;
+                if self.active_project_manager.as_ref().is_some_and(|active| {
+                    !self
+                        .project_managers
+                        .iter()
+                        .any(|project| &project.manager_id == active)
+                }) {
+                    self.active_project_manager = None;
+                    self.manager_index = 0;
+                }
                 self.loading = false;
                 self.update_filter();
                 if !errors.is_empty() {
@@ -844,7 +1099,7 @@ impl App {
                     self.maybe_check_updates_after_scan();
                 }
             }
-            UiEvent::UninstallOutput(line) => {
+            UiEvent::OperationOutput(line) => {
                 if let Some(console) = self.uninstall_console.as_mut() {
                     console.lines.push(line);
                     if console.lines.len() > 2_000 {
@@ -854,7 +1109,12 @@ impl App {
                     self.console_scroll = usize::MAX;
                 }
             }
-            UiEvent::UninstallFinished(code) => {
+            UiEvent::OperationFinished(code) => {
+                let operation = self
+                    .uninstall_console
+                    .as_ref()
+                    .map(|console| console.operation)
+                    .unwrap_or(self.operation_kind);
                 if let Some(console) = self.uninstall_console.as_mut() {
                     console.running = false;
                     console.exit_code = code;
@@ -865,14 +1125,21 @@ impl App {
                     });
                 }
                 if code == Some(0) {
-                    self.set_notice(
-                        "Uninstall completed; press r or leave Details to refresh packages",
-                    );
+                    self.set_notice(format!(
+                        "{} completed; press r or leave Details to refresh packages",
+                        operation.label()
+                    ));
                 } else {
-                    self.set_notice("Uninstall failed; see output in Details");
+                    self.set_notice(format!(
+                        "{} failed; see output in Details",
+                        operation.label()
+                    ));
                 }
             }
-            UiEvent::Updates(updates, errors) => {
+            UiEvent::Updates(generation, updates, errors) => {
+                if generation != self.inventory_generation {
+                    return;
+                }
                 self.update_versions = updates;
                 self.updates_checked = true;
                 self.checking_updates = false;
@@ -886,11 +1153,6 @@ impl App {
                 if !errors.is_empty() {
                     self.notice_queue = errors;
                     self.show_next_notice();
-                } else {
-                    self.set_notice(format!(
-                        "{} package updates available",
-                        self.update_versions.len()
-                    ));
                 }
             }
         }
@@ -904,10 +1166,10 @@ fn read_output<R: std::io::Read + Send + 'static>(reader: Option<R>, tx: Sender<
     for line in BufReader::new(reader).lines() {
         match line {
             Ok(line) => {
-                let _ = tx.send(UiEvent::UninstallOutput(line));
+                let _ = tx.send(UiEvent::OperationOutput(line));
             }
             Err(error) => {
-                let _ = tx.send(UiEvent::UninstallOutput(format!(
+                let _ = tx.send(UiEvent::OperationOutput(format!(
                     "Output read error: {error}"
                 )));
                 break;
@@ -932,8 +1194,9 @@ pub fn run_with_config_path(config: OmniConfig, explicit_config: Option<PathBuf>
     let (tx, rx) = mpsc::channel();
     let app_tx = tx.clone();
     let custom = config.custom_managers.clone();
+    let projects = config.manager.projects.clone();
     thread::spawn(move || {
-        let _ = tx.send(UiEvent::Packages(scan_packages(custom)));
+        let _ = tx.send(UiEvent::Packages(scan_packages(custom, projects)));
     });
     let mut app = App::new(config, app_tx);
     let config_files = ConfigFiles::new(explicit_config);
@@ -1139,7 +1402,8 @@ fn read_config_file(path: &Path) -> Result<String, String> {
 
 fn scan_packages(
     custom_configs: Vec<crate::config::CustomManagerConfig>,
-) -> (Vec<UnifiedPackage>, Vec<String>) {
+    project_config: ProjectManagersConfig,
+) -> (Vec<UnifiedPackage>, Vec<String>, Vec<ProjectContext>) {
     let providers: Vec<Box<dyn PackageManagerProvider>> = vec![
         Box::new(PacmanProvider),
         Box::new(YayProvider),
@@ -1166,23 +1430,27 @@ fn scan_packages(
             }
         }
     }
-    (packages, errors)
+    let project_managers = if project_config.enabled {
+        let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        let current = cwd.canonicalize().unwrap_or(cwd);
+        let mut found = discover_projects(&current);
+        if !project_config.detect_ancestors {
+            found.retain(|project| project.root == current);
+        }
+        found.retain(|project| project_config.supports(project.ecosystem));
+        for project in &found {
+            packages.extend(project.packages.clone());
+        }
+        found
+    } else {
+        Vec::new()
+    };
+    (packages, errors, project_managers)
 }
 
-fn check_available_updates(packages: Vec<UnifiedPackage>) -> UiEvent {
+fn check_available_updates(generation: u64, packages: Vec<UnifiedPackage>) -> UiEvent {
     let mut updates = HashMap::new();
     let mut errors = Vec::new();
-    if packages.iter().any(|package| {
-        matches!(
-            package.source,
-            crate::model::PackageSource::Flatpak
-                | crate::model::PackageSource::Cargo
-                | crate::model::PackageSource::Uv
-                | crate::model::PackageSource::Pip
-        )
-    }) {
-        errors.push("Update checks currently cover Pacman and AUR packages only".to_owned());
-    }
     for (binary, args, source) in [
         (
             "checkupdates",
@@ -1191,6 +1459,9 @@ fn check_available_updates(packages: Vec<UnifiedPackage>) -> UiEvent {
         ),
         ("yay", vec!["-Qua"], crate::model::PackageSource::Aur),
     ] {
+        if !packages.iter().any(|package| package.source == source) {
+            continue;
+        }
         let output = match std::process::Command::new(binary).args(args).output() {
             Ok(output) => output,
             Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -1242,7 +1513,7 @@ fn check_available_updates(packages: Vec<UnifiedPackage>) -> UiEvent {
             }
         }
     }
-    UiEvent::Updates(updates, errors)
+    UiEvent::Updates(generation, updates, errors)
 }
 
 fn render(frame: &mut Frame, app: &App) {
@@ -1271,7 +1542,9 @@ fn render(frame: &mut Frame, app: &App) {
         theme,
         app.searching,
         &app.query,
-        app.tab,
+        app.active_project()
+            .map(|project| project.label.as_str())
+            .unwrap_or_else(|| app.tab.display_name()),
         app.package_index,
         app.filtered.len(),
         total_size,
@@ -1289,6 +1562,17 @@ fn render(frame: &mut Frame, app: &App) {
     );
     if let Some(password) = app.sudo_password_input.as_ref() {
         render_sudo_password_prompt(frame, areas.status, password.len(), theme);
+    }
+    if let Some(input) = app.project_add_input.as_ref() {
+        render_project_add_prompt(
+            frame,
+            areas.status,
+            input,
+            app.active_project()
+                .map(|project| project.label.as_str())
+                .unwrap_or("project"),
+            theme,
+        );
     }
     match app.overlay {
         Some(Overlay::Help) => {
@@ -1312,6 +1596,21 @@ fn render(frame: &mut Frame, app: &App) {
                 .keymap
                 .get_bindings(Action::TogglePackageSelection)
                 .format_summary();
+            let clear_selection_key = app
+                .config
+                .keymap
+                .get_bindings(Action::ClearPackageSelection)
+                .format_summary();
+            let update_packages_key = app
+                .config
+                .keymap
+                .get_bindings(Action::UpdatePackages)
+                .format_summary();
+            let add_project_key = app
+                .config
+                .keymap
+                .get_bindings(Action::AddProjectPackage)
+                .format_summary();
             help::render(
                 frame,
                 frame.area(),
@@ -1321,11 +1620,14 @@ fn render(frame: &mut Frame, app: &App) {
                 &package_dependency_key,
                 &updates_key,
                 &selection_key,
+                &clear_selection_key,
+                &update_packages_key,
+                &add_project_key,
                 &app.help_filter,
                 app.help_filtering,
             )
         }
-        Some(Overlay::ConfirmUninstall) => {
+        Some(Overlay::ConfirmUninstall | Overlay::ConfirmUpdate) => {
             if !app.uninstall_targets.is_empty() && !app.uninstall_commands.is_empty() {
                 let commands = app
                     .uninstall_commands
@@ -1333,9 +1635,10 @@ fn render(frame: &mut Frame, app: &App) {
                     .map(|command| command.display.as_str())
                     .collect::<Vec<_>>()
                     .join("\n");
-                render_uninstall_confirm(
+                render_operation_confirm(
                     frame,
                     frame.area(),
+                    app.operation_kind,
                     &app.uninstall_targets,
                     &commands,
                     theme,
@@ -1364,7 +1667,7 @@ fn render_managers(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
     );
     let counts = app.manager_counts();
     let selected_style = theme.selection_style().add_modifier(Modifier::BOLD);
-    let items = FilterTab::ALL
+    let mut items = FilterTab::ALL
         .iter()
         .enumerate()
         .map(|(index, tab)| {
@@ -1387,6 +1690,39 @@ fn render_managers(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
             })
         })
         .collect::<Vec<_>>();
+    for (project_index, project) in app.project_managers.iter().enumerate() {
+        let index = FilterTab::ALL.len() + project_index;
+        let selected = index == app.manager_index;
+        let count = project
+            .packages
+            .iter()
+            .filter(|package| {
+                app.show_dependencies || package.install_reason != InstallReason::Dependency
+            })
+            .filter(|package| {
+                app.query.is_empty()
+                    || SkimMatcherV2::default()
+                        .fuzzy_match(&package.name, &app.query)
+                        .is_some()
+            })
+            .count();
+        let line = Line::from(vec![
+            Span::styled(
+                if selected { "▍" } else { " " },
+                if selected {
+                    Style::default().fg(theme.cursor_bar_color())
+                } else {
+                    Style::default()
+                },
+            ),
+            Span::raw(format!(" {:<15} {:>5}", project.label, count)),
+        ]);
+        items.push(ListItem::new(line).style(if selected {
+            selected_style
+        } else {
+            Style::default().fg(theme.fg_color())
+        }));
+    }
     let mut state = ListState::default().with_selected(Some(app.manager_index));
     frame.render_stateful_widget(
         List::new(items).style(Style::default().fg(theme.fg_color()).bg(panel_bg)),
@@ -1401,6 +1737,8 @@ fn render_packages(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
         format!(" PACKAGES /{} ", app.query)
     } else if app.updates_only {
         format!(" UPDATES ({}) ", app.update_versions.len())
+    } else if let Some(project) = app.active_project() {
+        format!(" PROJECT ({}) ", project.label)
     } else {
         format!(" PACKAGES ({}) ", app.tab.display_name())
     };
@@ -1439,11 +1777,7 @@ fn render_packages(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
             } else {
                 " "
             };
-            let update_mark = if package.latest_version.is_some() {
-                "↑"
-            } else {
-                " "
-            };
+            let has_update = package.latest_version.is_some();
             let size = package
                 .size_bytes
                 .map(|bytes| format_bytes(Some(bytes)))
@@ -1462,10 +1796,17 @@ fn render_packages(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    format!(
-                        "{update_mark}{name:<width$}",
-                        width = available_width.saturating_sub(1)
-                    ),
+                    if has_update { "↑" } else { " " },
+                    if has_update {
+                        Style::default()
+                            .fg(theme.border_focused_color())
+                            .add_modifier(Modifier::BOLD)
+                    } else {
+                        Style::default()
+                    },
+                ),
+                Span::styled(
+                    format!("{name:<width$}", width = available_width.saturating_sub(1)),
                     theme.badge_style_for_manager(package.source.name()),
                 ),
                 Span::styled(
@@ -1652,6 +1993,13 @@ fn render_details(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors)
     if let Some(date) = &package.install_date {
         lines.push(detail_line("Installed", date, theme));
     }
+    if let Some(project_id) = package.manager_id.as_deref()
+        && let Some((_, root)) = project_id
+            .strip_prefix("project:")
+            .and_then(|rest| rest.split_once(':'))
+    {
+        lines.push(detail_line("Project", root, theme));
+    }
     if let Some(latest) = &package.latest_version {
         lines.push(detail_line("Available", latest, theme));
     }
@@ -1757,7 +2105,7 @@ fn render_uninstall_console(
     };
     let title = Line::from(vec![
         Span::styled(
-            " UNINSTALL ",
+            format!(" {} ", console.operation.label()),
             Style::default()
                 .fg(theme.border_focused_color())
                 .add_modifier(Modifier::BOLD),
@@ -1813,9 +2161,10 @@ fn render_uninstall_console(
     }
 }
 
-fn render_uninstall_confirm(
+fn render_operation_confirm(
     frame: &mut Frame,
     area: Rect,
+    operation: OperationKind,
     packages: &[UnifiedPackage],
     command: &str,
     theme: &ThemeColors,
@@ -1828,17 +2177,37 @@ fn render_uninstall_confirm(
         .map(|package| format!("{} ({})", package.name, package.source))
         .collect::<Vec<_>>()
         .join("\n");
-    let content = format!(
-        "Remove {} package(s)?\n{}\n\nRemoving system packages may require administrator privileges. Omni runs as your user and asks for sudo only for this operation. Pacman removes only named targets and refuses removal if installed packages require them.\nCustom managers may run arbitrary configured shell actions.\n\nCommands:\n{}\n\n[y/Enter] confirm   [n/Esc] cancel",
-        packages.len(),
-        names,
-        command
-    );
+    let content = match operation {
+        OperationKind::Uninstall => format!(
+            "Remove {} package(s)?\n{}\n\nRemoving system packages may require administrator privileges. Omni runs as your user and asks for sudo only for this operation. Pacman removes only named targets and refuses removal if installed packages require them.\nCustom managers may run arbitrary configured shell actions.\n\nCommands:\n{}\n\n[y/Enter] confirm   [n/Esc] cancel",
+            packages.len(),
+            names,
+            command
+        ),
+        OperationKind::Update => format!(
+            "Update {} package(s)?\n{}\n\nOnly packages with a detected update are selected. Arch does not support partial upgrades: pacman -Syu may also upgrade every other outdated system package. AUR updates can run package build scripts as your user.\n\nCommands:\n{}\n\n[y/Enter] confirm   [n/Esc] cancel",
+            packages.len(),
+            names,
+            command
+        ),
+        OperationKind::Add => format!(
+            "Add project dependency?\n{}\n\nCommand:\n{}",
+            names, command
+        ),
+    };
     frame.render_widget(
         Paragraph::new(content)
             .scroll((0, 0))
             .wrap(Wrap { trim: true })
-            .block(popup_block(" Confirm uninstall ", theme, border)),
+            .block(popup_block(
+                match operation {
+                    OperationKind::Update => " Confirm update ",
+                    OperationKind::Add => " Add dependency ",
+                    OperationKind::Uninstall => " Confirm uninstall ",
+                },
+                theme,
+                border,
+            )),
         popup,
     );
 }
@@ -1991,6 +2360,38 @@ fn render_sudo_password_prompt(frame: &mut Frame, area: Rect, length: usize, the
         Span::raw(bullets),
         Span::styled(
             "▏  Enter: confirm  Esc: cancel",
+            Style::default().fg(theme.border_color()),
+        ),
+    ]);
+    frame.render_widget(
+        Paragraph::new(prompt).style(Style::default().fg(theme.fg_color()).bg(theme.bg_color())),
+        area,
+    );
+}
+
+fn render_project_add_prompt(
+    frame: &mut Frame,
+    area: Rect,
+    input: &str,
+    project_label: &str,
+    theme: &ThemeColors,
+) {
+    let prompt = Line::from(vec![
+        Span::styled(
+            " ADD ",
+            Style::default()
+                .fg(theme.bg_color())
+                .bg(theme.border_focused_color())
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!(" {project_label} · "),
+            Style::default().fg(theme.border_color()),
+        ),
+        Span::raw(input),
+        Span::styled("▏", Style::default().fg(theme.border_focused_color())),
+        Span::styled(
+            "  Enter: run  Esc: cancel",
             Style::default().fg(theme.border_color()),
         ),
     ]);

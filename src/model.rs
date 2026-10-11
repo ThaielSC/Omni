@@ -10,6 +10,7 @@ pub enum PackageSource {
     Cargo,
     Uv,
     Pip,
+    Project,
 }
 
 /// Whether an installed package was installed directly by the user or brought
@@ -34,6 +35,7 @@ impl PackageSource {
             Self::Cargo => "cargo",
             Self::Uv => "uv",
             Self::Pip => "pip",
+            Self::Project => "project",
         }
     }
 
@@ -46,6 +48,7 @@ impl PackageSource {
             Self::Cargo => "Cargo",
             Self::Uv => "uv",
             Self::Pip => "pip",
+            Self::Project => "Project",
         }
     }
 
@@ -58,6 +61,7 @@ impl PackageSource {
             Self::Cargo => "cargo",
             Self::Uv => "uv",
             Self::Pip => "pip",
+            Self::Project => "project",
         }
     }
 }
@@ -79,6 +83,7 @@ impl std::str::FromStr for PackageSource {
             "cargo" => Ok(Self::Cargo),
             "uv" => Ok(Self::Uv),
             "pip" | "python" => Ok(Self::Pip),
+            "project" => Ok(Self::Project),
             _ => Err(format!("Unknown package source: '{s}'")),
         }
     }
