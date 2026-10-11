@@ -4,24 +4,35 @@ use crate::model::{InstallReason, PackageSource};
 pub struct CargoProvider;
 pub fn parse_packages(input: &str) -> Vec<UnifiedPackage> {
     let mut out = Vec::new();
-    for block in input.split("\n\n") {
-        let mut lines = block.lines();
-        let Some(head) = lines.next() else { continue };
-        let Some((name, rest)) = head.split_once(' ') else {
-            continue;
-        };
-        let version = rest.trim().trim_start_matches("v");
-        if version.is_empty() {
+    let mut current: Option<UnifiedPackage> = None;
+    for line in input.lines() {
+        let line = line.trim_end_matches('\r');
+        if line.trim().is_empty() {
             continue;
         }
-        let bins = lines
-            .map(|l| l.trim().trim_start_matches('*').trim().to_string())
-            .filter(|s| !s.is_empty())
-            .collect::<Vec<_>>();
-        let mut p = UnifiedPackage::new(name, version, PackageSource::Cargo);
-        p.install_reason = InstallReason::Explicit;
-        p.binaries = bins;
-        out.push(p);
+        let indented = line.starts_with(' ') || line.starts_with('\t');
+        if !indented
+            && let Some(header) = line.strip_suffix(':')
+            && let Some((name, version)) = header.split_once(' ')
+            && let Some(version) = version.trim().strip_prefix('v')
+            && !name.is_empty()
+            && !version.is_empty()
+        {
+            if let Some(package) = current.take() {
+                out.push(package);
+            }
+            let mut package = UnifiedPackage::new(name, version, PackageSource::Cargo);
+            package.install_reason = InstallReason::Explicit;
+            current = Some(package);
+        } else if indented && let Some(package) = current.as_mut() {
+            let binary = line.trim().trim_start_matches('*').trim();
+            if !binary.is_empty() {
+                package.binaries.push(binary.to_owned());
+            }
+        }
+    }
+    if let Some(package) = current {
+        out.push(package);
     }
     out
 }
@@ -84,6 +95,25 @@ mod tests {
         let p = parse_packages("ripgrep v14.1.0:\n    rg\n\nfd v10.2.0:\n    fd");
         assert_eq!(p.len(), 2);
         assert_eq!(p[0].binaries, vec!["rg"]);
+        assert_eq!(p[0].version, "14.1.0");
+        assert_eq!(p[1].version, "10.2.0");
+    }
+
+    #[test]
+    fn parses_adjacent_install_headers_without_blank_lines() {
+        let packages = parse_packages(
+            "cargo-update v22.1.1:\n    cargo-install-update\n    cargo-install-update-config\nrustfilt v0.2.0:\n    rustfilt\n",
+        );
+        assert_eq!(packages.len(), 2);
+        assert_eq!(packages[0].name, "cargo-update");
+        assert_eq!(packages[0].version, "22.1.1");
+        assert_eq!(
+            packages[0].binaries,
+            ["cargo-install-update", "cargo-install-update-config"]
+        );
+        assert_eq!(packages[1].name, "rustfilt");
+        assert_eq!(packages[1].version, "0.2.0");
+        assert_eq!(packages[1].binaries, ["rustfilt"]);
     }
     #[test]
     fn parses_crates2_registry() {
