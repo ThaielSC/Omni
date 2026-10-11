@@ -1695,6 +1695,12 @@ fn check_available_updates(
 
     for manager in custom_configs {
         let manager_id = manager.id.clone();
+        if !packages
+            .iter()
+            .any(|package| package.manager_id.as_deref() == Some(manager_id.as_str()))
+        {
+            continue;
+        }
         let provider_config =
             crate::provider::custom::CustomManager::from_configs(vec![manager.clone()])
                 .into_iter()

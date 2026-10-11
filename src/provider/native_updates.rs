@@ -89,6 +89,7 @@ fn check_flatpak(installed: &[UnifiedPackage]) -> UpdateCheckReport {
     let manager = UpdateManager::Flatpak;
     check_command(
         manager,
+        installed,
         "flatpak",
         &[
             "remote-ls",
@@ -102,15 +103,20 @@ fn check_flatpak(installed: &[UnifiedPackage]) -> UpdateCheckReport {
 
 fn check_uv(installed: &[UnifiedPackage]) -> UpdateCheckReport {
     let manager = UpdateManager::Uv;
-    check_command(manager, "uv", &["tool", "list", "--outdated"], |out| {
-        parse_uv_updates(out, installed)
-    })
+    check_command(
+        manager,
+        installed,
+        "uv",
+        &["tool", "list", "--outdated"],
+        |out| parse_uv_updates(out, installed),
+    )
 }
 
 fn check_pip(installed: &[UnifiedPackage]) -> UpdateCheckReport {
     let manager = UpdateManager::Pip;
     check_command(
         manager,
+        installed,
         "pip",
         &["list", "--outdated", "--format=json"],
         |out| parse_pip_updates(out, installed),
@@ -119,6 +125,12 @@ fn check_pip(installed: &[UnifiedPackage]) -> UpdateCheckReport {
 
 fn check_cargo(installed: &[UnifiedPackage]) -> UpdateCheckReport {
     let manager = UpdateManager::Cargo;
+    if !installed
+        .iter()
+        .any(|package| package.source == manager.source())
+    {
+        return UpdateCheckReport::new(manager, UpdateCheckState::Checked, Vec::new());
+    }
     if !super::available("cargo") {
         return UpdateCheckReport::new(manager, UpdateCheckState::Unavailable, Vec::new());
     }
@@ -175,10 +187,17 @@ fn check_cargo(installed: &[UnifiedPackage]) -> UpdateCheckReport {
 
 fn check_command(
     manager: UpdateManager,
+    installed: &[UnifiedPackage],
     binary: &str,
     args: &[&str],
     parse: impl FnOnce(&str) -> Result<Vec<AvailableUpdate>, String>,
 ) -> UpdateCheckReport {
+    if !installed
+        .iter()
+        .any(|package| package.source == manager.source())
+    {
+        return UpdateCheckReport::new(manager, UpdateCheckState::Checked, Vec::new());
+    }
     if !super::available(binary) {
         return UpdateCheckReport::new(manager, UpdateCheckState::Unavailable, Vec::new());
     }
@@ -491,5 +510,14 @@ mod tests {
         assert_eq!(canonical_name("A.B_c-D"), "abcd");
         let installed = [package("same", "1", PackageSource::Uv)];
         assert!(parse_pip_updates("[]", &installed).unwrap().is_empty());
+    }
+
+    #[test]
+    fn skips_native_update_queries_when_inventory_has_no_matching_packages() {
+        let reports = discover_updates(&[]);
+        assert_eq!(reports.len(), 4);
+        assert!(reports.iter().all(|report| {
+            report.state == UpdateCheckState::Checked && report.updates.is_empty()
+        }));
     }
 }
