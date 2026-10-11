@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::PackageSource;
+use crate::model::{InstallReason, PackageSource};
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PacmanProvider;
@@ -22,6 +22,9 @@ pub fn parse_packages(input: &str) -> Vec<UnifiedPackage> {
                 field("Version").unwrap_or("unknown"),
                 PackageSource::Pacman,
             );
+            p.install_reason = field("Install Reason")
+                .and_then(parse_install_reason)
+                .unwrap_or(InstallReason::Unknown);
             if let Some(d) = field("Description") {
                 p.description = Some(d.into());
             }
@@ -43,6 +46,15 @@ pub fn parse_packages(input: &str) -> Vec<UnifiedPackage> {
             Some(p)
         })
         .collect()
+}
+
+/// Parse pacman's stable English `pacman -Qi` install-reason field.
+fn parse_install_reason(value: &str) -> Option<InstallReason> {
+    match value.trim() {
+        "Explicitly installed" => Some(InstallReason::Explicit),
+        "Installed as a dependency for another package" => Some(InstallReason::Dependency),
+        _ => None,
+    }
 }
 pub(crate) fn parse_size(s: &str) -> Option<u64> {
     let mut parts = s.split_whitespace();

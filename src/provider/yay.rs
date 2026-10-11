@@ -1,5 +1,6 @@
 use super::*;
 use crate::model::PackageSource;
+use std::collections::HashSet;
 #[derive(Debug, Default, Clone, Copy)]
 pub struct YayProvider;
 pub fn parse_packages(input: &str) -> Vec<UnifiedPackage> {
@@ -32,11 +33,28 @@ impl PackageManagerProvider for YayProvider {
     }
     fn list_packages(&self) -> Result<Vec<UnifiedPackage>, ProviderError> {
         let out = run("pacman", &["-Qm"])?;
-        let mut p = parse_packages(&text(out)?);
-        for x in &mut p {
-            x.source = PackageSource::Aur;
+        let foreign: HashSet<String> = parse_packages(&text(out)?)
+            .into_iter()
+            .map(|package| package.name)
+            .collect();
+        if foreign.is_empty() {
+            return Ok(Vec::new());
         }
-        Ok(p)
+
+        // `-Qm` omits install reasons; `-Qi` provides them. Read package
+        // details once rather than launching one subprocess per AUR package.
+        let details = run("pacman", &["-Qi"])?;
+        Ok(super::pacman::parse_packages(&text(details)?)
+            .into_iter()
+            .filter_map(|mut package| {
+                if foreign.contains(&package.name) {
+                    package.source = PackageSource::Aur;
+                    Some(package)
+                } else {
+                    None
+                }
+            })
+            .collect())
     }
 }
 #[cfg(test)]

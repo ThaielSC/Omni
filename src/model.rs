@@ -12,6 +12,18 @@ pub enum PackageSource {
     Pip,
 }
 
+/// Whether an installed package was installed directly by the user or brought
+/// in as another package's dependency. Some package managers do not expose
+/// this distinction, in which case the value remains `Unknown`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum InstallReason {
+    Explicit,
+    Dependency,
+    #[default]
+    Unknown,
+}
+
 impl PackageSource {
     /// Canonical lowercase identifier for CLI arguments and serialization.
     pub fn name(&self) -> &'static str {
@@ -196,22 +208,18 @@ impl SortMode {
     pub fn sort_packages(&self, packages: &mut [UnifiedPackage]) {
         match self {
             Self::SizeDesc => {
-                packages.sort_by(|a, b| {
-                    match (a.size_bytes, b.size_bytes) {
-                        (Some(sa), Some(sb)) => {
-                            sb.cmp(&sa)
-                                .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-                                .then_with(|| a.version.cmp(&b.version))
-                        }
-                        (Some(_), None) => std::cmp::Ordering::Less,
-                        (None, Some(_)) => std::cmp::Ordering::Greater,
-                        (None, None) => {
-                            a.name
-                                .to_lowercase()
-                                .cmp(&b.name.to_lowercase())
-                                .then_with(|| a.version.cmp(&b.version))
-                        }
-                    }
+                packages.sort_by(|a, b| match (a.size_bytes, b.size_bytes) {
+                    (Some(sa), Some(sb)) => sb
+                        .cmp(&sa)
+                        .then_with(|| a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+                        .then_with(|| a.version.cmp(&b.version)),
+                    (Some(_), None) => std::cmp::Ordering::Less,
+                    (None, Some(_)) => std::cmp::Ordering::Greater,
+                    (None, None) => a
+                        .name
+                        .to_lowercase()
+                        .cmp(&b.name.to_lowercase())
+                        .then_with(|| a.version.cmp(&b.version)),
                 });
             }
             Self::NameAsc => {
@@ -262,6 +270,8 @@ pub struct UnifiedPackage {
     pub name: String,
     pub version: String,
     pub source: PackageSource,
+    #[serde(default, skip_serializing_if = "InstallReason::is_unknown")]
+    pub install_reason: InstallReason,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size_bytes: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -286,6 +296,7 @@ impl UnifiedPackage {
             name: name.into(),
             version: version.into(),
             source,
+            install_reason: InstallReason::Unknown,
             size_bytes: None,
             description: None,
             dependencies: Vec::new(),
@@ -295,6 +306,11 @@ impl UnifiedPackage {
             license: None,
             install_date: None,
         }
+    }
+
+    pub fn with_install_reason(mut self, reason: InstallReason) -> Self {
+        self.install_reason = reason;
+        self
     }
 
     pub fn with_size(mut self, size_bytes: u64) -> Self {
@@ -350,6 +366,12 @@ impl UnifiedPackage {
     }
 }
 
+impl InstallReason {
+    fn is_unknown(&self) -> bool {
+        matches!(self, Self::Unknown)
+    }
+}
+
 /// Domain errors encountered during package discovery or management.
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {
@@ -383,13 +405,25 @@ mod tests {
         assert_eq!(PackageSource::Pacman.name(), "pacman");
         assert_eq!(PackageSource::Aur.display_name(), "AUR");
         assert_eq!(PackageSource::Cargo.badge_label(), "cargo");
-        assert_eq!("pacman".parse::<PackageSource>().unwrap(), PackageSource::Pacman);
+        assert_eq!(
+            "pacman".parse::<PackageSource>().unwrap(),
+            PackageSource::Pacman
+        );
         assert_eq!("yay".parse::<PackageSource>().unwrap(), PackageSource::Aur);
         assert_eq!("aur".parse::<PackageSource>().unwrap(), PackageSource::Aur);
-        assert_eq!("flatpak".parse::<PackageSource>().unwrap(), PackageSource::Flatpak);
-        assert_eq!("cargo".parse::<PackageSource>().unwrap(), PackageSource::Cargo);
+        assert_eq!(
+            "flatpak".parse::<PackageSource>().unwrap(),
+            PackageSource::Flatpak
+        );
+        assert_eq!(
+            "cargo".parse::<PackageSource>().unwrap(),
+            PackageSource::Cargo
+        );
         assert_eq!("uv".parse::<PackageSource>().unwrap(), PackageSource::Uv);
-        assert_eq!("python".parse::<PackageSource>().unwrap(), PackageSource::Pip);
+        assert_eq!(
+            "python".parse::<PackageSource>().unwrap(),
+            PackageSource::Pip
+        );
         assert_eq!("pip".parse::<PackageSource>().unwrap(), PackageSource::Pip);
         assert!("unknown_mgr".parse::<PackageSource>().is_err());
     }
@@ -475,8 +509,10 @@ mod tests {
     #[test]
     fn test_sort_packages_by_date_desc() {
         let mut pkgs = vec![
-            UnifiedPackage::new("pkg-old", "1.0", PackageSource::Cargo).with_install_date("2025-01-01"),
-            UnifiedPackage::new("pkg-new", "1.0", PackageSource::Pacman).with_install_date("2026-09-01"),
+            UnifiedPackage::new("pkg-old", "1.0", PackageSource::Cargo)
+                .with_install_date("2025-01-01"),
+            UnifiedPackage::new("pkg-new", "1.0", PackageSource::Pacman)
+                .with_install_date("2026-09-01"),
             UnifiedPackage::new("pkg-nodate", "1.0", PackageSource::Aur),
         ];
 

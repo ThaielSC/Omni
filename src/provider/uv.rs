@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::PackageSource;
+use crate::model::{InstallReason, PackageSource};
 #[derive(Debug, Default, Clone, Copy)]
 pub struct UvProvider;
 pub fn parse_packages(input: &str) -> Vec<UnifiedPackage> {
@@ -20,7 +20,10 @@ pub fn parse_packages(input: &str) -> Vec<UnifiedPackage> {
             if version.is_empty() {
                 return None;
             }
-            Some(UnifiedPackage::new(name, version, PackageSource::Uv))
+            Some(
+                UnifiedPackage::new(name, version, PackageSource::Uv)
+                    .with_install_reason(InstallReason::Explicit),
+            )
         })
         .collect()
 }
