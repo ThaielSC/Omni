@@ -35,7 +35,7 @@ Omni is a Rust package inventory and management TUI that unifies system and lang
 - [x] Enrich package metadata for pip, Flatpak runtime requirements, and custom manager JSON/info/size commands where available.
 - [x] Persist user-visible notices and operation summaries in a private, rotating log; expose `omni --logs` and `omni --log-path`.
 - [ ] Manually exercise each available manager and privilege-helper path in a disposable test environment.
-- [ ] Complete release/security review and confirm all acceptance criteria in [`VERSIONING.md`](VERSIONING.md).
+- [ ] Complete remaining release gates in [`VERSIONING.md`](VERSIONING.md). The source-level command review and current dependency advisory scan are documented in [`SECURITY_REVIEW.md`](SECURITY_REVIEW.md); live-manager and TUI acceptance checks remain.
 
 ## Post-1.0 / optional follow-up
 
