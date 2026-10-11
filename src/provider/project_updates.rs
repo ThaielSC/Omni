@@ -3,6 +3,7 @@
 //! Results are keyed by both manager identity and dependency name because a
 //! workspace can contain the same dependency name in multiple manifests.
 
+use crate::config::ProjectManagersConfig;
 use crate::model::{PackageSource, UnifiedPackage};
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
@@ -35,7 +36,10 @@ struct ManagerPackages {
 /// Query project-local managers for newer versions while keeping manifests and
 /// lockfiles untouched. Cargo uses `--dry-run`; npm's `outdated` and Bun's
 /// `outdated` commands are documented read-only queries.
-pub fn check_project_updates(packages: &[UnifiedPackage]) -> ProjectUpdateResults {
+pub fn check_project_updates(
+    packages: &[UnifiedPackage],
+    config: &ProjectManagersConfig,
+) -> ProjectUpdateResults {
     let mut managers: BTreeMap<String, ManagerPackages> = BTreeMap::new();
     for package in packages {
         if package.source != PackageSource::Project {
@@ -47,6 +51,9 @@ pub fn check_project_updates(packages: &[UnifiedPackage]) -> ProjectUpdateResult
         let Some((ecosystem, root)) = parse_project_manager_id(manager_id) else {
             continue;
         };
+        if !config.supports(&ecosystem) {
+            continue;
+        }
         managers
             .entry(manager_id.to_owned())
             .or_insert_with(|| ManagerPackages {
@@ -61,9 +68,9 @@ pub fn check_project_updates(packages: &[UnifiedPackage]) -> ProjectUpdateResult
     let mut results = ProjectUpdateResults::default();
     for (manager_id, manager) in managers {
         let query = match manager.ecosystem.as_str() {
-            "cargo" => query_cargo(&manager),
-            "npm" => query_npm(&manager),
-            "bun" => query_bun(&manager),
+            "cargo" => query_cargo(&manager, &config.cargo_binary),
+            "npm" => query_npm(&manager, &config.npm_binary),
+            "bun" => query_bun(&manager, &config.bun_binary),
             other => Err(format!("Unsupported project package manager '{other}'")),
         };
         match query {
@@ -97,11 +104,11 @@ fn parse_project_manager_id(manager_id: &str) -> Option<(String, PathBuf)> {
     Some((ecosystem.to_owned(), PathBuf::from(root)))
 }
 
-fn query_cargo(manager: &ManagerPackages) -> Result<HashMap<String, String>, String> {
+fn query_cargo(manager: &ManagerPackages, binary: &str) -> Result<HashMap<String, String>, String> {
     if manager.names.is_empty() {
         return Ok(HashMap::new());
     }
-    let mut command = Command::new("cargo");
+    let mut command = Command::new(binary);
     command
         .current_dir(&manager.root)
         .arg("update")
@@ -114,7 +121,7 @@ fn query_cargo(manager: &ManagerPackages) -> Result<HashMap<String, String>, Str
     command.env("NO_COLOR", "1");
     let output = command
         .output()
-        .map_err(|error| format!("could not start cargo update --dry-run: {error}"))?;
+        .map_err(|error| format!("could not start {binary} update --dry-run: {error}"))?;
     ensure_success("cargo update --dry-run", &output)?;
     Ok(parse_cargo_dry_run(
         &combined_output(&output),
@@ -122,13 +129,13 @@ fn query_cargo(manager: &ManagerPackages) -> Result<HashMap<String, String>, Str
     ))
 }
 
-fn query_npm(manager: &ManagerPackages) -> Result<HashMap<String, String>, String> {
-    let output = Command::new("npm")
+fn query_npm(manager: &ManagerPackages, binary: &str) -> Result<HashMap<String, String>, String> {
+    let output = Command::new(binary)
         .current_dir(&manager.root)
         .args(["outdated", "--json"])
         .env("NO_COLOR", "1")
         .output()
-        .map_err(|error| format!("could not start npm outdated --json: {error}"))?;
+        .map_err(|error| format!("could not start {binary} outdated --json: {error}"))?;
 
     // npm exits with status 1 when outdated packages are found. The JSON
     // payload is still the useful result in that case; other failures report
@@ -136,7 +143,7 @@ fn query_npm(manager: &ManagerPackages) -> Result<HashMap<String, String>, Strin
     let stdout = String::from_utf8_lossy(&output.stdout);
     let parsed = serde_json::from_str::<serde_json::Value>(&stdout);
     if !output.status.success() && output.status.code() != Some(1) {
-        return Err(command_error("npm outdated --json", &output));
+        return Err(command_error(&format!("{binary} outdated --json"), &output));
     }
     let value = parsed.map_err(|error| {
         if !output.status.success() && output.status.code() == Some(1) {
@@ -179,24 +186,24 @@ fn parse_npm_outdated(
     Ok(updates)
 }
 
-fn query_bun(manager: &ManagerPackages) -> Result<HashMap<String, String>, String> {
-    let output = Command::new("bun")
+fn query_bun(manager: &ManagerPackages, binary: &str) -> Result<HashMap<String, String>, String> {
+    let output = Command::new(binary)
         .current_dir(&manager.root)
         .args(["outdated", "--no-progress"])
         .env("NO_COLOR", "1")
         .output()
-        .map_err(|error| format!("could not start bun outdated: {error}"))?;
+        .map_err(|error| format!("could not start {binary} outdated: {error}"))?;
     // Bun documents `bun outdated` as read-only. Accept status 1 for the
     // common CLI convention where outdated dependencies are represented as a
     // non-zero result, but still require a parseable table.
     if !output.status.success() && output.status.code() != Some(1) {
-        return Err(command_error("bun outdated", &output));
+        return Err(command_error(&format!("{binary} outdated"), &output));
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
     let updates = parse_bun_outdated(&stdout, &manager.names);
     if !output.status.success() && updates.is_empty() {
         return Err(format!(
-            "bun outdated returned status 1 without parseable update rows: {}",
+            "{binary} outdated returned status 1 without parseable update rows: {}",
             diagnostic(&output)
         ));
     }
@@ -329,6 +336,10 @@ fn same_version(left: &str, right: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::config::ProjectManagersConfig;
+    use crate::model::{PackageSource, UnifiedPackage};
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
 
     fn names(values: &[&str]) -> HashSet<String> {
         values.iter().map(|value| (*value).to_owned()).collect()
@@ -365,5 +376,55 @@ mod tests {
             parse_project_manager_id("project:npm:/tmp/a:b").expect("valid manager id");
         assert_eq!(ecosystem, "npm");
         assert_eq!(root, PathBuf::from("/tmp/a:b"));
+    }
+
+    #[test]
+    fn project_update_check_uses_configured_binary_and_skips_disabled_managers() {
+        let temp = std::env::temp_dir().join(format!(
+            "omni-project-update-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&temp).unwrap();
+        let project = temp.join("project");
+        fs::create_dir_all(&project).unwrap();
+        let binary = temp.join("npm-test");
+        fs::write(
+            &binary,
+            "#!/bin/sh\nprintf '%s\\n' '{\"demo\":{\"current\":\"1.0.0\",\"wanted\":\"1.1.0\",\"latest\":\"2.0.0\"}}'\nexit 1\n",
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&binary).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&binary, permissions).unwrap();
+
+        let mut package = UnifiedPackage::new("demo", "1.0.0", PackageSource::Project);
+        package.manager_id = Some(format!("project:npm:{}", project.display()));
+        let mut config = ProjectManagersConfig {
+            npm_binary: binary.display().to_string(),
+            ..ProjectManagersConfig::default()
+        };
+
+        let results = check_project_updates(std::slice::from_ref(&package), &config);
+        assert_eq!(results.errors.len(), 0);
+        assert_eq!(
+            results
+                .updates
+                .get(&ProjectPackageKey {
+                    manager_id: package.manager_id.clone().unwrap(),
+                    name: "demo".into(),
+                })
+                .map(String::as_str),
+            Some("1.1.0")
+        );
+
+        config.npm = false;
+        let disabled = check_project_updates(&[package], &config);
+        assert!(disabled.updates.is_empty());
+        assert!(disabled.errors.is_empty());
+        fs::remove_dir_all(temp).unwrap();
     }
 }
