@@ -47,6 +47,8 @@ update_json_array_path = "/updates"
 update_json_name = "/name"
 update_json_latest_version = "/latest"
 update_cmd = "update {name} --to {latest_version}"
+# need_sudo también se aplica al ejecutar update_cmd; con sudo, Omni pide
+# la contraseña en su prompt inferior y solo la envía por stdin.
 
 
 # --- Gestor de Paquetes Ruby: Gem ---
@@ -103,7 +105,7 @@ need_sudo       = false
 
 En Rust, el trait `PackageManagerProvider` se implementa de forma genérica con la estructura `CustomManager`:
 
-> **Seguridad:** `uninstall_cmd` es una línea de shell ejecutable, no una descripción declarativa inocua. Omni escapa los valores interpolados `{name}` y `{version}`, pero el resto de la plantilla se ejecuta tal cual. Trata `managers.toml` como código confiable; con `need_sudo = true`, la orden se ejecuta con privilegios elevados.
+> **Seguridad:** `uninstall_cmd` es una línea de shell ejecutable, no una descripción declarativa inocua. Omni escapa los valores interpolados `{name}` y `{version}`, pero el resto de la plantilla se ejecuta tal cual. Trata `managers.toml` como código confiable; con `need_sudo = true`, las acciones de desinstalación y actualización se ejecutan con privilegios elevados. `update_cmd` se tokeniza y ejecuta directamente, sin shell. Para `sudo`, Omni muestra su prompt enmascarado y entrega la contraseña solo por stdin. Los helpers alternativos, como `doas`, deben autorizarse mediante su propia configuración no interactiva.
 
 ```rust
 #[derive(Debug, Clone, Deserialize)]

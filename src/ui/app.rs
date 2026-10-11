@@ -81,6 +81,7 @@ enum UiEvent {
     Packages((Vec<UnifiedPackage>, Vec<String>, Vec<ProjectContext>)),
     OperationOutput(String),
     OperationFinished(Option<i32>),
+    ClipboardResult(String, Result<(), String>),
     Updates(u64, HashMap<PackageIdentity, String>, Vec<String>),
 }
 
@@ -539,10 +540,11 @@ impl App {
                     self.set_notice("No package selected");
                     return false;
                 };
-                match copy_to_system_clipboard(&name) {
-                    Ok(()) => self.set_notice(format!("Copied package name: {name}")),
-                    Err(error) => self.set_notice(error),
-                }
+                let tx = self.reload_tx.clone();
+                thread::spawn(move || {
+                    let result = copy_to_system_clipboard(&name);
+                    let _ = tx.send(UiEvent::ClipboardResult(name, result));
+                });
             }
             Some(Action::GotoAll) => self.select_tab(FilterTab::All),
             Some(Action::GotoPacman) => self.select_tab(FilterTab::Pacman),
@@ -960,11 +962,18 @@ impl App {
                         latest,
                     ) {
                         Ok(Some(command)) => {
-                            built.push(crate::provider::uninstall::UninstallCommand::custom_update(
+                            match crate::provider::uninstall::UninstallCommand::custom_update(
                                 command.program,
                                 command.args,
-                                format!("{} {}", manager.name, package.name),
-                            ))
+                                &self.config.behavior,
+                                manager.need_sudo,
+                            ) {
+                                Ok(command) => built.push(command),
+                                Err(error) => {
+                                    self.set_notice(error);
+                                    return;
+                                }
+                            }
                         }
                         Ok(None) => {}
                         Err(error) => {
@@ -1220,6 +1229,10 @@ impl App {
                     self.console_scroll = usize::MAX;
                 }
             }
+            UiEvent::ClipboardResult(name, result) => match result {
+                Ok(()) => self.set_notice(format!("Copied package name: {name}")),
+                Err(error) => self.set_notice(format!("Clipboard copy failed: {error}")),
+            },
             UiEvent::OperationFinished(code) => {
                 let operation = self
                     .uninstall_console
@@ -1784,7 +1797,7 @@ fn copy_to_system_clipboard(text: &str) -> Result<(), String> {
             let _ = child.wait();
             continue;
         }
-        match child.wait_with_output() {
+        match wait_for_clipboard_child(child, Duration::from_secs(3)) {
             Ok(output) if output.status.success() => return Ok(()),
             Ok(output) => {
                 let message = String::from_utf8_lossy(&output.stderr).trim().to_owned();
@@ -1800,6 +1813,27 @@ fn copy_to_system_clipboard(text: &str) -> Result<(), String> {
     Err(last_error.unwrap_or_else(|| {
         "No clipboard helper found; install wl-clipboard, xclip, or xsel".to_owned()
     }))
+}
+
+fn wait_for_clipboard_child(
+    mut child: std::process::Child,
+    timeout: Duration,
+) -> io::Result<std::process::Output> {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if child.try_wait()?.is_some() {
+            return child.wait_with_output();
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "clipboard helper timed out",
+            ));
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
 }
 
 fn render(frame: &mut Frame, app: &App) {
@@ -2672,7 +2706,9 @@ fn truncate(value: &str, width: usize) -> String {
 
 #[cfg(test)]
 mod uninstall_ui_tests {
-    use super::{App, dependency_package_name, is_no_updates_exit, render};
+    use super::{
+        App, dependency_package_name, is_no_updates_exit, render, wait_for_clipboard_child,
+    };
     use crate::config::OmniConfig;
     use ratatui::{Terminal, backend::TestBackend};
     use std::sync::mpsc;
@@ -2691,6 +2727,18 @@ mod uninstall_ui_tests {
         assert!(!is_no_updates_exit("yay", Some(1), b"diagnostic", b""));
         assert!(!is_no_updates_exit("yay", Some(1), b"", b"network error"));
         assert!(is_no_updates_exit("checkupdates", Some(2), b"", b""));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn clipboard_helper_wait_is_bounded() {
+        let child = std::process::Command::new("/bin/sh")
+            .args(["-c", "sleep 2"])
+            .spawn()
+            .unwrap();
+        let error =
+            wait_for_clipboard_child(child, std::time::Duration::from_millis(40)).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::TimedOut);
     }
 
     #[test]
