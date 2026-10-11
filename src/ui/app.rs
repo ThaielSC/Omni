@@ -58,6 +58,8 @@ struct App {
     query: String,
     searching: bool,
     overlay: Option<Overlay>,
+    help_filter: String,
+    help_filtering: bool,
     loading: bool,
     reload_after_loading: bool,
     notice: Option<(String, Instant)>,
@@ -80,6 +82,8 @@ impl App {
             query: String::new(),
             searching: false,
             overlay: None,
+            help_filter: String::new(),
+            help_filtering: false,
             loading: true,
             reload_after_loading: false,
             notice: None,
@@ -165,9 +169,31 @@ impl App {
         }
 
         if let Some(overlay) = self.overlay {
+            if overlay == Overlay::Help && self.help_filtering {
+                match key.code {
+                    KeyCode::Esc => {
+                        self.overlay = None;
+                        self.help_filtering = false;
+                        self.help_filter.clear();
+                    }
+                    KeyCode::Enter => self.help_filtering = false,
+                    KeyCode::Backspace => {
+                        self.help_filter.pop();
+                    }
+                    KeyCode::Char(c) if !key.modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.help_filter.push(c);
+                    }
+                    _ => {}
+                }
+                return false;
+            }
             match key.code {
                 KeyCode::Esc | KeyCode::Char('q') | KeyCode::Enter => self.overlay = None,
                 KeyCode::Char('?') if overlay == Overlay::Help => self.overlay = None,
+                KeyCode::Char('/') if overlay == Overlay::Help => {
+                    self.help_filter.clear();
+                    self.help_filtering = true;
+                }
                 _ => {}
             }
             return false;
@@ -633,6 +659,8 @@ fn render(frame: &mut Frame, app: &App) {
                 theme,
                 app.config.layout.border_type(),
                 &dependency_key,
+                &app.help_filter,
+                app.help_filtering,
             )
         }
         Some(Overlay::Unavailable) => {

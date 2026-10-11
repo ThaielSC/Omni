@@ -22,7 +22,7 @@
 
 Con `border_style = "none"`, el panel enfocado se distingue además con una barra vertical `▍` en el borde izquierdo, coloreada por `theme.colors.cursor_bar`. El espacio de esa barra se reserva en los tres paneles para que el contenido no se desplace al cambiar el foco. La marca es deliberadamente estrecha: hace evidente el foco sin añadir marcos ni ruido visual. En los otros estilos, el foco se comunica mediante el borde y el título del panel.
 
-El modal de ayuda mantiene un marco redondeado aunque la vista principal use paneles sin bordes. Su título, grupos de atajos y teclas resaltadas crean jerarquía visual; una indicación discreta al pie recuerda que `Esc` o `q` lo cierran.
+El modal de ayuda mantiene un marco redondeado aunque la vista principal use paneles sin bordes. Es compacto, agrupa los atajos por sección con títulos de color y separadores horizontales, y destaca las teclas en bloques. `/` filtra la guía mientras se escribe; el pie recuerda cómo cerrar el modal.
 
 ---
 
