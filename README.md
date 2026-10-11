@@ -108,6 +108,7 @@ Los atajos predeterminados se pueden reasignar; la ventana `?` muestra las accio
 | `u` | Consultar actualizaciones y mostrar los paquetes actualizables; repetir para volver al inventario |
 | `Space` | Seleccionar o quitar de la selección el paquete actual y avanzar |
 | `,` | Limpiar toda la selección de paquetes |
+| `c` | Copiar el nombre del paquete bajo el cursor al portapapeles |
 | `U` | Actualizar los paquetes seleccionados o, si no hay selección, el paquete bajo el cursor |
 | `a` | Agregar una dependencia cuando está activa una categoría de proyecto |
 | `i` | Abrir o cerrar la lista de dependencias del paquete actual |
@@ -183,12 +184,15 @@ bun = true
 [keymap]
 toggle_updates = "u"
 toggle_package_selection = " "
+copy_package_name = "c"
 uninstall = ["d", "x"]
 reload = "r"
 help = "?"
 ```
 
 Los cambios válidos se aplican mientras la aplicación está abierta. Si un archivo queda temporalmente inválido durante la edición, Omni mantiene la última configuración válida y muestra una notificación. La referencia completa de opciones está en [CONFIGURATION_SPEC.md](docs/CONFIGURATION_SPEC.md).
+
+El atajo `c` copia el nombre del paquete bajo el cursor. En Linux hace falta un helper de portapapeles: Omni prueba `wl-copy` (paquete `wl-clipboard`), `xclip` y `xsel`, en ese orden. El atajo puede reasignarse con `copy_package_name`.
 
 ### Gestores de proyectos
 
