@@ -153,7 +153,10 @@ mod tests {
         assert_eq!(format_bytes_compact(Some(500)), "500B");
         assert_eq!(format_bytes_compact(Some(5 * 1024 * 1024)), "5.0M");
         assert_eq!(format_bytes_compact(Some(1024 * 1024 * 1024)), "1.0G");
-        assert_eq!(format_bytes_compact(Some(1024 * 1024 * 1024 * 1024)), "1.0T");
+        assert_eq!(
+            format_bytes_compact(Some(1024 * 1024 * 1024 * 1024)),
+            "1.0T"
+        );
     }
 
     #[test]
