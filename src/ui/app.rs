@@ -1,7 +1,8 @@
 use std::io::{self, Stdout};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant, SystemTime};
 
 use anyhow::{Context, Result};
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -16,7 +17,11 @@ use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::{Frame, Terminal};
 
-use crate::config::{Action, OmniConfig, ThemeColors};
+use crate::config::{
+    Action, OmniConfig, ThemeColors, default_config_path, default_keymap_path,
+    default_managers_path, default_theme_path, parse_keymap_toml, parse_managers_toml,
+    parse_theme_toml,
+};
 use crate::model::{FilterTab, InstallReason, SortMode, UnifiedPackage};
 use crate::provider::{
     PackageManagerProvider, cargo::CargoProvider, custom::CustomManager, flatpak::FlatpakProvider,
@@ -54,6 +59,8 @@ struct App {
     searching: bool,
     overlay: Option<Overlay>,
     loading: bool,
+    reload_after_loading: bool,
+    notice: Option<(String, Instant)>,
     reload_tx: Sender<Vec<UnifiedPackage>>,
 }
 
@@ -74,6 +81,8 @@ impl App {
             searching: false,
             overlay: None,
             loading: true,
+            reload_after_loading: false,
+            notice: None,
             reload_tx,
         }
     }
@@ -310,9 +319,35 @@ impl App {
             let _ = tx.send(scan_packages(custom));
         });
     }
+
+    fn apply_config(&mut self, config: OmniConfig, managers_changed: bool) {
+        self.config = config;
+        if !self.config.layout.show_managers && self.focus == Focus::Managers {
+            self.focus = Focus::Packages;
+        }
+        if !self.config.layout.show_details && self.focus == Focus::Details {
+            self.focus = Focus::Packages;
+        }
+        self.set_notice("Configuration reloaded");
+        if managers_changed {
+            if self.loading {
+                self.reload_after_loading = true;
+            } else {
+                self.start_reload();
+            }
+        }
+    }
+
+    fn set_notice(&mut self, message: impl Into<String>) {
+        self.notice = Some((message.into(), Instant::now() + Duration::from_secs(3)));
+    }
 }
 
 pub fn run(config: OmniConfig) -> Result<()> {
+    run_with_config_path(config, None)
+}
+
+pub fn run_with_config_path(config: OmniConfig, explicit_config: Option<PathBuf>) -> Result<()> {
     let mut terminal = TerminalGuard::enter()?;
     let (tx, rx) = mpsc::channel();
     let app_tx = tx.clone();
@@ -321,7 +356,9 @@ pub fn run(config: OmniConfig) -> Result<()> {
         let _ = tx.send(scan_packages(custom));
     });
     let mut app = App::new(config, app_tx);
-    let result = event_loop(&mut terminal.terminal, &mut app, &rx);
+    let config_files = ConfigFiles::new(explicit_config);
+    let mut watcher = ConfigWatcher::new(config_files);
+    let result = event_loop(&mut terminal.terminal, &mut app, &rx, &mut watcher);
     result
 }
 
@@ -329,6 +366,7 @@ fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     app: &mut App,
     rx: &Receiver<Vec<UnifiedPackage>>,
+    watcher: &mut ConfigWatcher,
 ) -> Result<()> {
     loop {
         if let Ok(mut packages) = rx.try_recv() {
@@ -336,6 +374,16 @@ fn event_loop(
             app.packages = packages;
             app.loading = false;
             app.update_filter();
+            if app.reload_after_loading {
+                app.reload_after_loading = false;
+                app.start_reload();
+            }
+        }
+        if let Some(result) = watcher.poll() {
+            match result {
+                Ok((config, managers_changed)) => app.apply_config(config, managers_changed),
+                Err(error) => app.set_notice(format!("Config error: {error}")),
+            }
         }
         terminal.draw(|frame| render(frame, app))?;
         if event::poll(Duration::from_millis(80))? {
@@ -350,6 +398,154 @@ fn event_loop(
         }
     }
     Ok(())
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FileFingerprint {
+    modified: Option<SystemTime>,
+    length: u64,
+}
+
+struct ConfigFiles {
+    config: Option<PathBuf>,
+    theme: Option<PathBuf>,
+    keymap: Option<PathBuf>,
+    managers: Option<PathBuf>,
+    managers_overlay: bool,
+}
+
+impl ConfigFiles {
+    fn new(explicit_config: Option<PathBuf>) -> Self {
+        if let Some(config) = explicit_config {
+            let managers = config.parent().map(|dir| dir.join("managers.toml"));
+            Self {
+                config: Some(config),
+                theme: None,
+                keymap: None,
+                managers,
+                managers_overlay: true,
+            }
+        } else {
+            Self {
+                config: default_config_path(),
+                theme: default_theme_path(),
+                keymap: default_keymap_path(),
+                managers: default_managers_path(),
+                managers_overlay: false,
+            }
+        }
+    }
+
+    fn paths(&self) -> Vec<PathBuf> {
+        [
+            self.config.as_ref(),
+            self.theme.as_ref(),
+            self.keymap.as_ref(),
+            self.managers.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+        .cloned()
+        .collect()
+    }
+
+    fn load(&self) -> Result<OmniConfig, String> {
+        let mut config = match self.config.as_deref() {
+            Some(path) if path.exists() => {
+                let contents = read_config_file(path)?;
+                toml::from_str(&contents).map_err(|error| format!("{}: {error}", path.display()))?
+            }
+            _ => OmniConfig::default(),
+        };
+
+        if let Some(path) = self.theme.as_deref()
+            && path.exists()
+        {
+            config.theme = parse_theme_toml(&read_config_file(path)?)
+                .map_err(|error| format!("{}: {error}", path.display()))?;
+        }
+        if let Some(path) = self.keymap.as_deref()
+            && path.exists()
+        {
+            config.keymap = parse_keymap_toml(&read_config_file(path)?)
+                .map_err(|error| format!("{}: {error}", path.display()))?;
+        }
+        if let Some(path) = self.managers.as_deref()
+            && path.exists()
+        {
+            let managers = parse_managers_toml(&read_config_file(path)?)
+                .map_err(|error| format!("{}: {error}", path.display()))?;
+            if self.managers_overlay {
+                config.custom_managers.extend(managers);
+            } else {
+                config.custom_managers = managers;
+            }
+        } else if !self.managers_overlay {
+            config.custom_managers.clear();
+        }
+        Ok(config)
+    }
+}
+
+struct ConfigWatcher {
+    files: ConfigFiles,
+    fingerprints: Vec<Option<FileFingerprint>>,
+    last_check: Instant,
+}
+
+impl ConfigWatcher {
+    fn new(files: ConfigFiles) -> Self {
+        let fingerprints = files
+            .paths()
+            .iter()
+            .map(|path| fingerprint(path).ok().flatten())
+            .collect();
+        Self {
+            files,
+            fingerprints,
+            last_check: Instant::now(),
+        }
+    }
+
+    fn poll(&mut self) -> Option<Result<(OmniConfig, bool), String>> {
+        if self.last_check.elapsed() < Duration::from_millis(350) {
+            return None;
+        }
+        self.last_check = Instant::now();
+        let paths = self.files.paths();
+        let mut changed = false;
+        let mut managers_changed = false;
+        for (index, path) in paths.iter().enumerate() {
+            let current = match fingerprint(path) {
+                Ok(value) => value,
+                Err(_) => continue,
+            };
+            if current != self.fingerprints[index] {
+                changed = true;
+                if self.files.managers.as_ref() == Some(path) {
+                    managers_changed = true;
+                }
+                self.fingerprints[index] = current;
+            }
+        }
+        changed.then(|| self.files.load().map(|config| (config, managers_changed)))
+    }
+}
+
+fn fingerprint(path: &Path) -> std::io::Result<Option<FileFingerprint>> {
+    match std::fs::metadata(path) {
+        Ok(metadata) => Ok(Some(FileFingerprint {
+            modified: metadata.modified().ok(),
+            length: metadata.len(),
+        })),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(error) => Err(error),
+    }
+}
+
+fn read_config_file(path: &Path) -> Result<String, String> {
+    std::fs::read_to_string(path)
+        .map_err(|error| format!("cannot read {}: {error}", path.display()))
 }
 
 fn scan_packages(custom_configs: Vec<crate::config::CustomManagerConfig>) -> Vec<UnifiedPackage> {
@@ -411,6 +607,10 @@ fn render(frame: &mut Frame, app: &App) {
         total_size,
         app.sort,
         app.show_dependencies,
+        app.notice
+            .as_ref()
+            .filter(|(_, expires)| *expires > Instant::now())
+            .map(|(message, _)| message.as_str()),
     );
     match app.overlay {
         Some(Overlay::Help) => {

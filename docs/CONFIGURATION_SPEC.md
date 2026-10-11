@@ -32,6 +32,8 @@ border_style = "none"
 padding = 1
 ```
 
+Los cambios en `config.toml`, `theme.toml`, `keymap.toml` y `managers.toml` se detectan mientras Omni está abierto. El nuevo estado se aplica sin reiniciar; al cambiar `managers.toml`, el inventario se vuelve a consultar en segundo plano. Si un archivo todavía está incompleto o contiene TOML inválido, Omni conserva la configuración anterior y muestra un aviso temporal en la statusline. Los archivos indicados con `--config` también se observan, junto con el `managers.toml` del mismo directorio.
+
 ---
 
 ## 2. Personalización de Temas y Colores (`[theme]`)
