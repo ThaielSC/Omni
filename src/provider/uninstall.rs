@@ -69,7 +69,12 @@ impl UninstallCommand {
         args.remove(index);
         args.splice(
             index..index,
-            ["-S".to_owned(), "-p".to_owned(), String::new()],
+            [
+                "-k".to_owned(),
+                "-S".to_owned(),
+                "-p".to_owned(),
+                String::new(),
+            ],
         );
         command.args(args);
         command
@@ -306,7 +311,17 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             args,
-            ["-S", "-p", "", "pacman", "-R", "--noconfirm", "--", "app"]
+            [
+                "-k",
+                "-S",
+                "-p",
+                "",
+                "pacman",
+                "-R",
+                "--noconfirm",
+                "--",
+                "app"
+            ]
         );
         assert!(!args.iter().any(|arg| arg == "-n"));
     }
