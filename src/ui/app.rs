@@ -324,8 +324,13 @@ impl App {
                 .as_ref()
                 .is_some_and(|console| !console.running)
         {
-            self.uninstall_console = None;
-            self.detail_scroll = 0;
+            if self.focus == Focus::Details {
+                self.focus = Focus::Packages;
+                self.refresh_after_uninstall_console();
+            } else {
+                self.uninstall_console = None;
+                self.detail_scroll = 0;
+            }
             return false;
         }
 
@@ -370,7 +375,19 @@ impl App {
                     }
                 }
             }
-            Some(Action::Reload) => self.start_reload(),
+            Some(Action::Reload) => {
+                if self.focus == Focus::Details
+                    && self
+                        .uninstall_console
+                        .as_ref()
+                        .is_some_and(|console| !console.running)
+                {
+                    self.uninstall_console = None;
+                    self.detail_scroll = 0;
+                    self.focus = Focus::Packages;
+                }
+                self.start_reload();
+            }
             Some(Action::Uninstall) => self.prepare_uninstall(),
             Some(Action::GotoAll) => self.select_tab(FilterTab::All),
             Some(Action::GotoPacman) => self.select_tab(FilterTab::Pacman),
@@ -434,7 +451,29 @@ impl App {
             .position(|pane| *pane == self.focus)
             .unwrap_or(0);
         let next = (current as isize + direction as isize).clamp(0, panes.len() as isize - 1);
+        let previous = self.focus;
         self.focus = panes[next as usize];
+        if previous == Focus::Details
+            && self.focus != Focus::Details
+            && self
+                .uninstall_console
+                .as_ref()
+                .is_some_and(|console| !console.running)
+        {
+            self.refresh_after_uninstall_console();
+        }
+    }
+
+    fn refresh_after_uninstall_console(&mut self) {
+        if self
+            .uninstall_console
+            .as_ref()
+            .is_some_and(|console| !console.running)
+        {
+            self.uninstall_console = None;
+            self.detail_scroll = 0;
+            self.start_reload();
+        }
     }
 
     fn move_selection(&mut self, amount: isize) {
@@ -706,8 +745,9 @@ impl App {
                     });
                 }
                 if code == Some(0) {
-                    self.set_notice("Uninstall completed; refreshing package inventory");
-                    self.start_reload();
+                    self.set_notice(
+                        "Uninstall completed; press r or leave Details to refresh packages",
+                    );
                 } else {
                     self.set_notice("Uninstall failed; see output in Details");
                 }
