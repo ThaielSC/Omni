@@ -109,6 +109,7 @@ Los atajos predeterminados se pueden reasignar; la ventana `?` muestra las accio
 | `Space` | Seleccionar o quitar de la selección el paquete actual y avanzar |
 | `,` | Limpiar toda la selección de paquetes |
 | `c` | Copiar el nombre del paquete bajo el cursor al portapapeles |
+| `C` | Con Details enfocado, copiar sus detalles o la salida de operación |
 | `U` | Actualizar los paquetes seleccionados o, si no hay selección, el paquete bajo el cursor |
 | `a` | Agregar una dependencia cuando está activa una categoría de proyecto |
 | `i` | Abrir o cerrar la lista de dependencias del paquete actual |
@@ -267,6 +268,7 @@ El archivo rota al superar 1 MiB, conserva una copia `.log.1` y se crea con perm
 - [Especificación de UI/UX](docs/UI_UX_SPEC.md)
 - [Configuración, temas y atajos](docs/CONFIGURATION_SPEC.md)
 - [Gestores personalizados](docs/MANAGERS_SPEC.md)
+- [Cobertura y límites por proveedor](docs/PROVIDER_SUPPORT.md)
 - [Política de versiones y tags](docs/VERSIONING.md)
 - [Revisión de seguridad](docs/SECURITY_REVIEW.md)
 - [Flujo de GitButler](docs/GITBUTLER_BRANCHES.md)
