@@ -62,6 +62,7 @@ jobs:
             <path d="M8 25h48M20 12v13m24-13v13M20 39h24M20 47h14" fill="none" stroke="#d4be98" stroke-linecap="round" stroke-width="4"/>
           </svg>
           EOF
+          cp "$appdir/usr/share/icons/hicolor/scalable/apps/omni.svg" "$appdir/omni.svg"
           ln -s usr/share/icons/hicolor/scalable/apps/omni.svg "$appdir/.DirIcon"
           ln -s usr/bin/omni "$appdir/AppRun"
           printf 'VERSION=%s\n' "$version" >> "$GITHUB_ENV"
