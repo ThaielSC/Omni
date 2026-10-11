@@ -24,7 +24,8 @@ Una vez alcanzada la versión 1.0.0:
 - [ ] Manual de instalación, configuración, keybindings, operaciones y limitaciones actualizado; `LICENSE` MIT presente y metadatos Cargo alineados.
 - [ ] Validar la TUI en terminales amplias y estrechas, todos los estilos de paneles, live reload, selección múltiple, ayuda y errores/notificaciones.
 - [ ] Verificar en un entorno descartable las operaciones reales de listado, updates y desinstalación para cada proveedor habilitado; confirmar flujo de sudo/doas, cancelación y refresco tras éxito.
-- [ ] Revisar amenazas de comandos personalizados: sus consultas y updates usan argv, mientras que cualquier plantilla que ejecute shell debe advertirse explícitamente y tratarse como código confiable.
+- [x] Revisar amenazas de comandos personalizados: consultas y actualizaciones usan argv; la plantilla `uninstall_cmd` puede ejecutar shell, se advierte explícitamente y sus valores interpolados se escapan. Resultados y límites del análisis en [`SECURITY_REVIEW.md`](SECURITY_REVIEW.md).
+- [x] Auditar las dependencias bloqueadas contra avisos conocidos; el escaneo RustSec del 2026-10-10 no encontró vulnerabilidades conocidas. Repetirlo antes del release.
 - [ ] Documentar soporte y límites de cada fuente para tamaño, motivo de instalación, dependencias, resolución de versiones y updates; ningún dato desconocido se debe inventar.
 - [ ] Cerrar las limitaciones que afecten seguridad/corrección, resolver issues bloqueantes y hacer una prueba de instalación desde un artefacto limpio.
 - [ ] Alinear `Cargo.toml`, `Cargo.lock`, README y notas de release en `1.0.0`; crear tag anotado solo sobre el commit aprobado.

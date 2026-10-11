@@ -265,6 +265,7 @@ El archivo rota al superar 1 MiB, conserva una copia `.log.1` y se crea con perm
 - [Configuración, temas y atajos](docs/CONFIGURATION_SPEC.md)
 - [Gestores personalizados](docs/MANAGERS_SPEC.md)
 - [Política de versiones y tags](docs/VERSIONING.md)
+- [Revisión de seguridad](docs/SECURITY_REVIEW.md)
 - [Flujo de GitButler](docs/GITBUTLER_BRANCHES.md)
 - [Guía de continuación](docs/HANDOFF.md)
 
