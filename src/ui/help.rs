@@ -44,6 +44,8 @@ pub fn render(
     border: ratatui::widgets::BorderType,
     dependency_key: &str,
     package_dependency_key: &str,
+    updates_key: &str,
+    selection_key: &str,
     filter: &str,
     filtering: bool,
 ) {
@@ -74,7 +76,12 @@ pub fn render(
         ])
         .split(inner);
 
-    let shortcuts = shortcuts(dependency_key, package_dependency_key);
+    let shortcuts = shortcuts(
+        dependency_key,
+        package_dependency_key,
+        updates_key,
+        selection_key,
+    );
     let filter = filter.trim().to_lowercase();
     let mut lines = Vec::new();
     let mut active_section = None;
@@ -159,7 +166,12 @@ pub fn render(
     frame.render_widget(block, popup);
 }
 
-fn shortcuts(dependency_key: &str, package_dependency_key: &str) -> Vec<Shortcut> {
+fn shortcuts(
+    dependency_key: &str,
+    package_dependency_key: &str,
+    updates_key: &str,
+    selection_key: &str,
+) -> Vec<Shortcut> {
     use Section::{Browse, Navigation, Omni};
 
     vec![
@@ -200,6 +212,16 @@ fn shortcuts(dependency_key: &str, package_dependency_key: &str) -> Vec<Shortcut
         },
         Shortcut {
             section: Browse,
+            keys: updates_key.into(),
+            description: "Check for and show packages with available updates",
+        },
+        Shortcut {
+            section: Browse,
+            keys: selection_key.into(),
+            description: "Select package and advance to the next row",
+        },
+        Shortcut {
+            section: Browse,
             keys: dependency_key.into(),
             description: "Show or hide packages installed as dependencies",
         },
@@ -221,7 +243,7 @@ fn shortcuts(dependency_key: &str, package_dependency_key: &str) -> Vec<Shortcut
         Shortcut {
             section: Omni,
             keys: "d / x".into(),
-            description: "Confirm uninstall; output appears in Details",
+            description: "Uninstall selected packages; output appears in Details",
         },
         Shortcut {
             section: Omni,

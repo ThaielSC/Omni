@@ -1,3 +1,4 @@
+use std::collections::{HashMap, HashSet};
 use std::io::{self, BufRead, BufReader, Stdout, Write};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -52,6 +53,17 @@ enum UiEvent {
     Packages((Vec<UnifiedPackage>, Vec<String>)),
     UninstallOutput(String),
     UninstallFinished(Option<i32>),
+    Updates(HashMap<PackageIdentity, String>, Vec<String>),
+}
+
+type PackageIdentity = (crate::model::PackageSource, Option<String>, String);
+
+fn package_identity(package: &UnifiedPackage) -> PackageIdentity {
+    (
+        package.source,
+        package.manager_id.clone(),
+        package.name.clone(),
+    )
 }
 
 #[derive(Debug, Clone)]
@@ -79,6 +91,7 @@ struct App {
     help_filter: String,
     help_filtering: bool,
     loading: bool,
+    checking_updates: bool,
     started_at: Instant,
     reload_after_loading: bool,
     notice: Option<(String, Instant)>,
@@ -86,11 +99,15 @@ struct App {
     reload_tx: Sender<UiEvent>,
     show_package_dependencies: bool,
     dependency_index: usize,
-    uninstall_target: Option<UnifiedPackage>,
-    uninstall_command: Option<crate::provider::UninstallCommand>,
+    uninstall_targets: Vec<UnifiedPackage>,
+    uninstall_commands: Vec<crate::provider::UninstallCommand>,
     uninstall_console: Option<UninstallConsole>,
     console_scroll: usize,
     sudo_password_input: Option<Zeroizing<Vec<u8>>>,
+    selected_packages: HashSet<PackageIdentity>,
+    updates_only: bool,
+    update_versions: HashMap<PackageIdentity, String>,
+    updates_checked: bool,
 }
 
 impl App {
@@ -112,6 +129,7 @@ impl App {
             help_filter: String::new(),
             help_filtering: false,
             loading: true,
+            checking_updates: false,
             started_at: Instant::now(),
             reload_after_loading: false,
             notice: None,
@@ -119,11 +137,15 @@ impl App {
             reload_tx,
             show_package_dependencies: false,
             dependency_index: 0,
-            uninstall_target: None,
-            uninstall_command: None,
+            uninstall_targets: Vec::new(),
+            uninstall_commands: Vec::new(),
             uninstall_console: None,
             console_scroll: 0,
             sudo_password_input: None,
+            selected_packages: HashSet::new(),
+            updates_only: false,
+            update_versions: HashMap::new(),
+            updates_checked: false,
         }
     }
 
@@ -136,6 +158,12 @@ impl App {
             .filter(|(_, package)| self.tab.matches(package.source))
             .filter(|(_, package)| {
                 self.show_dependencies || package.install_reason != InstallReason::Dependency
+            })
+            .filter(|(_, package)| {
+                !self.updates_only
+                    || self
+                        .update_versions
+                        .contains_key(&package_identity(package))
             })
             .filter(|(_, package)| {
                 if self.query.is_empty() {
@@ -213,8 +241,8 @@ impl App {
             match key.code {
                 KeyCode::Esc => {
                     self.sudo_password_input = None;
-                    self.uninstall_target = None;
-                    self.uninstall_command = None;
+                    self.uninstall_targets.clear();
+                    self.uninstall_commands.clear();
                     self.set_notice("Password entry cancelled; uninstall was not run");
                 }
                 KeyCode::Enter => {
@@ -293,8 +321,8 @@ impl App {
             match key.code {
                 KeyCode::Esc | KeyCode::Char('n') if overlay == Overlay::ConfirmUninstall => {
                     self.overlay = None;
-                    self.uninstall_target = None;
-                    self.uninstall_command = None;
+                    self.uninstall_targets.clear();
+                    self.uninstall_commands.clear();
                 }
                 KeyCode::Enter | KeyCode::Char('y') if overlay == Overlay::ConfirmUninstall => {
                     self.overlay = None;
@@ -355,6 +383,8 @@ impl App {
                 self.sort.sort_packages(&mut self.packages);
                 self.update_filter();
             }
+            Some(Action::ToggleUpdates) => self.toggle_updates_view(),
+            Some(Action::TogglePackageSelection) => self.toggle_package_selection(),
             Some(Action::ToggleDependencies) => {
                 self.show_dependencies = !self.show_dependencies;
                 self.package_index = 0;
@@ -385,6 +415,10 @@ impl App {
                     self.uninstall_console = None;
                     self.detail_scroll = 0;
                     self.focus = Focus::Packages;
+                }
+                if self.updates_only {
+                    self.updates_checked = false;
+                    self.update_versions.clear();
                 }
                 self.start_reload();
             }
@@ -430,6 +464,49 @@ impl App {
         self.package_index = 0;
         self.focus = Focus::Packages;
         self.update_filter();
+    }
+
+    fn toggle_package_selection(&mut self) {
+        if self.focus != Focus::Packages {
+            return;
+        }
+        if let Some(package) = self.selected_package().cloned() {
+            let identity = package_identity(&package);
+            if !self.selected_packages.insert(identity.clone()) {
+                self.selected_packages.remove(&identity);
+            }
+            if !self.filtered.is_empty() {
+                self.package_index = (self.package_index + 1).min(self.filtered.len() - 1);
+            }
+        }
+    }
+
+    fn toggle_updates_view(&mut self) {
+        self.updates_only = !self.updates_only;
+        self.package_index = 0;
+        self.focus = Focus::Packages;
+        if self.updates_only && !self.loading && !self.updates_checked && !self.checking_updates {
+            self.start_update_check();
+        }
+        self.update_filter();
+    }
+
+    fn start_update_check(&mut self) {
+        if self.checking_updates || self.loading {
+            return;
+        }
+        self.checking_updates = true;
+        let tx = self.reload_tx.clone();
+        let packages = self.packages.clone();
+        thread::spawn(move || {
+            let _ = tx.send(check_available_updates(packages));
+        });
+    }
+
+    fn maybe_check_updates_after_scan(&mut self) {
+        if self.updates_only && !self.updates_checked && !self.checking_updates {
+            self.start_update_check();
+        }
     }
 
     fn move_focus(&mut self, direction: i8) {
@@ -554,32 +631,53 @@ impl App {
             return;
         }
         self.loading = true;
+        let check_updates = self.updates_only;
+        self.checking_updates = check_updates;
         // The provider scan is intentionally detached from the event loop; the
         // UI remains responsive and receives its result through the channel.
         let tx = self.reload_tx.clone();
         let custom = self.config.custom_managers.clone();
         thread::spawn(move || {
-            let _ = tx.send(UiEvent::Packages(scan_packages(custom)));
+            let (packages, errors) = scan_packages(custom);
+            let _ = tx.send(UiEvent::Packages((packages.clone(), errors)));
+            if check_updates {
+                let _ = tx.send(check_available_updates(packages));
+            }
         });
     }
 
     fn prepare_uninstall(&mut self) {
-        let target = if matches!(self.focus, Focus::PackageDependencies | Focus::Details)
+        let targets = if self.focus == Focus::Packages && !self.selected_packages.is_empty() {
+            self.packages
+                .iter()
+                .filter(|package| self.selected_packages.contains(&package_identity(package)))
+                .cloned()
+                .collect::<Vec<_>>()
+        } else if matches!(self.focus, Focus::PackageDependencies | Focus::Details)
             && self.show_package_dependencies
         {
-            self.selected_dependency_package().cloned()
+            self.selected_dependency_package()
+                .cloned()
+                .into_iter()
+                .collect()
         } else {
-            self.selected_package().cloned()
+            self.selected_package().cloned().into_iter().collect()
         };
-        let Some(target) = target else {
+        if targets.is_empty() {
             self.set_notice("Dependency is not present in the installed package inventory");
             return;
-        };
-        match build_uninstall_command(&target, &self.config.behavior, &self.config.custom_managers)
-        {
-            Ok(command) => {
-                self.uninstall_target = Some(target);
-                self.uninstall_command = Some(command);
+        }
+        let commands = targets
+            .iter()
+            .map(|target| {
+                build_uninstall_command(target, &self.config.behavior, &self.config.custom_managers)
+            })
+            .collect::<Result<Vec<_>, _>>();
+        match commands {
+            Ok(commands) => {
+                self.uninstall_targets = targets;
+                self.uninstall_commands = commands;
+                self.selected_packages.clear();
                 if self.config.behavior.confirm_uninstall {
                     self.overlay = Some(Overlay::ConfirmUninstall);
                 } else {
@@ -592,9 +690,9 @@ impl App {
 
     fn start_uninstall(&mut self) {
         if self
-            .uninstall_command
-            .as_ref()
-            .is_some_and(|command| command.sudo_program().is_some())
+            .uninstall_commands
+            .iter()
+            .any(|command| command.sudo_program().is_some())
         {
             self.sudo_password_input = Some(Zeroizing::new(Vec::new()));
             return;
@@ -603,75 +701,95 @@ impl App {
     }
 
     fn launch_uninstall(&mut self, password: Option<Zeroizing<Vec<u8>>>) {
-        let (Some(target), Some(command)) =
-            (self.uninstall_target.take(), self.uninstall_command.take())
-        else {
+        if self.uninstall_targets.is_empty() || self.uninstall_commands.is_empty() {
             return;
-        };
+        }
+        let targets = std::mem::take(&mut self.uninstall_targets);
+        let commands = std::mem::take(&mut self.uninstall_commands);
         let tx = self.reload_tx.clone();
-        let display = command.display.clone();
+        let package_names = targets
+            .iter()
+            .map(|p| p.name.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        let displayed_commands = commands
+            .iter()
+            .map(|command| format!("$ {}", command.display))
+            .collect::<Vec<_>>();
         self.uninstall_console = Some(UninstallConsole {
-            package: target.name.clone(),
-            lines: vec![format!("$ {display}"), String::new()],
+            package: package_names,
+            lines: displayed_commands
+                .into_iter()
+                .chain(std::iter::once(String::new()))
+                .collect(),
             running: true,
             exit_code: None,
         });
         self.console_scroll = usize::MAX;
         self.focus = Focus::Details;
         thread::spawn(move || {
-            let uses_stdin_password = password.is_some();
-            let mut process = if uses_stdin_password {
-                command.command_with_stdin_password()
-            } else {
-                command.command()
-            };
-            process
-                .stdin(if uses_stdin_password {
-                    std::process::Stdio::piped()
+            let mut final_code = Some(0);
+            for command in commands {
+                let uses_stdin_password = password.is_some() && command.sudo_program().is_some();
+                let mut process = if uses_stdin_password {
+                    command.command_with_stdin_password()
                 } else {
-                    std::process::Stdio::null()
-                })
-                .stdout(std::process::Stdio::piped())
-                .stderr(std::process::Stdio::piped());
-            let mut child = match process.spawn() {
-                Ok(child) => child,
-                Err(error) => {
-                    let _ = tx.send(UiEvent::UninstallOutput(format!(
-                        "Failed to start command: {error}"
-                    )));
-                    let _ = tx.send(UiEvent::UninstallFinished(None));
-                    return;
-                }
-            };
-            if let Some(mut password) = password {
-                if let Some(mut stdin) = child.stdin.take() {
-                    let write_result = stdin
-                        .write_all(password.as_slice())
-                        .and_then(|()| stdin.write_all(b"\n"));
-                    password.zeroize();
-                    drop(stdin);
-                    if let Err(error) = write_result {
-                        let _ = child.kill();
+                    command.command()
+                };
+                process
+                    .stdin(if uses_stdin_password {
+                        std::process::Stdio::piped()
+                    } else {
+                        std::process::Stdio::null()
+                    })
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped());
+                let mut child = match process.spawn() {
+                    Ok(child) => child,
+                    Err(error) => {
                         let _ = tx.send(UiEvent::UninstallOutput(format!(
-                            "Failed to send password to sudo: {error}"
+                            "Failed to start command: {error}"
                         )));
-                        let _ = child.wait();
-                        let _ = tx.send(UiEvent::UninstallFinished(None));
-                        return;
+                        final_code = None;
+                        break;
+                    }
+                };
+                if uses_stdin_password {
+                    if let (Some(secret), Some(mut stdin)) = (password.as_ref(), child.stdin.take())
+                    {
+                        let write_result = stdin
+                            .write_all(secret.as_slice())
+                            .and_then(|()| stdin.write_all(b"\n"));
+                        drop(stdin);
+                        if let Err(error) = write_result {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                            let _ = tx.send(UiEvent::UninstallOutput(format!(
+                                "Failed to send password to sudo: {error}"
+                            )));
+                            final_code = None;
+                            break;
+                        }
                     }
                 }
+                let stdout = child.stdout.take();
+                let stderr = child.stderr.take();
+                let out_tx = tx.clone();
+                let err_tx = tx.clone();
+                let out_reader = thread::spawn(move || read_output(stdout, out_tx));
+                let err_reader = thread::spawn(move || read_output(stderr, err_tx));
+                let status = child.wait().ok();
+                let _ = out_reader.join();
+                let _ = err_reader.join();
+                let code = status.and_then(|status| status.code());
+                if code != Some(0) {
+                    final_code = code;
+                }
             }
-            let stdout = child.stdout.take();
-            let stderr = child.stderr.take();
-            let out_tx = tx.clone();
-            let err_tx = tx.clone();
-            let out_reader = thread::spawn(move || read_output(stdout, out_tx));
-            let err_reader = thread::spawn(move || read_output(stderr, err_tx));
-            let status = child.wait().ok();
-            let _ = out_reader.join();
-            let _ = err_reader.join();
-            let code = status.and_then(|status| status.code());
-            let _ = tx.send(UiEvent::UninstallFinished(code));
+            if let Some(mut password) = password {
+                password.zeroize();
+            }
+            let _ = tx.send(UiEvent::UninstallFinished(final_code));
         });
     }
 
@@ -722,6 +840,8 @@ impl App {
                 if self.reload_after_loading {
                     self.reload_after_loading = false;
                     self.start_reload();
+                } else {
+                    self.maybe_check_updates_after_scan();
                 }
             }
             UiEvent::UninstallOutput(line) => {
@@ -750,6 +870,27 @@ impl App {
                     );
                 } else {
                     self.set_notice("Uninstall failed; see output in Details");
+                }
+            }
+            UiEvent::Updates(updates, errors) => {
+                self.update_versions = updates;
+                self.updates_checked = true;
+                self.checking_updates = false;
+                for package in &mut self.packages {
+                    package.latest_version = self
+                        .update_versions
+                        .get(&package_identity(package))
+                        .cloned();
+                }
+                self.update_filter();
+                if !errors.is_empty() {
+                    self.notice_queue = errors;
+                    self.show_next_notice();
+                } else {
+                    self.set_notice(format!(
+                        "{} package updates available",
+                        self.update_versions.len()
+                    ));
                 }
             }
         }
@@ -1028,6 +1169,82 @@ fn scan_packages(
     (packages, errors)
 }
 
+fn check_available_updates(packages: Vec<UnifiedPackage>) -> UiEvent {
+    let mut updates = HashMap::new();
+    let mut errors = Vec::new();
+    if packages.iter().any(|package| {
+        matches!(
+            package.source,
+            crate::model::PackageSource::Flatpak
+                | crate::model::PackageSource::Cargo
+                | crate::model::PackageSource::Uv
+                | crate::model::PackageSource::Pip
+        )
+    }) {
+        errors.push("Update checks currently cover Pacman and AUR packages only".to_owned());
+    }
+    for (binary, args, source) in [
+        (
+            "checkupdates",
+            Vec::<&str>::new(),
+            crate::model::PackageSource::Pacman,
+        ),
+        ("yay", vec!["-Qua"], crate::model::PackageSource::Aur),
+    ] {
+        let output = match std::process::Command::new(binary).args(args).output() {
+            Ok(output) => output,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                if packages.iter().any(|package| package.source == source) {
+                    errors.push(match binary {
+                        "checkupdates" => {
+                            "Install pacman-contrib to check repository updates".to_owned()
+                        }
+                        "yay" => "yay is unavailable; AUR updates could not be checked".to_owned(),
+                        _ => format!("{binary} is unavailable"),
+                    });
+                }
+                continue;
+            }
+            Err(error) => {
+                errors.push(format!("Could not start update check ({binary}): {error}"));
+                continue;
+            }
+        };
+        if !output.status.success()
+            && !(binary == "checkupdates" && output.status.code() == Some(2))
+        {
+            errors.push(format!(
+                "Update check ({binary}) failed: {}",
+                String::from_utf8_lossy(&output.stderr).trim()
+            ));
+            continue;
+        }
+        let installed_names = packages
+            .iter()
+            .filter(|package| package.source == source)
+            .map(|package| package.name.as_str())
+            .collect::<HashSet<_>>();
+        for line in String::from_utf8_lossy(&output.stdout).lines() {
+            let mut fields = line.split_whitespace();
+            let Some(name) = fields.next() else { continue };
+            let Some(_installed_version) = fields.next() else {
+                continue;
+            };
+            if fields.next() != Some("->") {
+                continue;
+            }
+            let Some(latest_version) = fields.next() else {
+                continue;
+            };
+            if installed_names.contains(name) {
+                let key = (source, None, name.to_owned());
+                updates.insert(key, latest_version.to_owned());
+            }
+        }
+    }
+    UiEvent::Updates(updates, errors)
+}
+
 fn render(frame: &mut Frame, app: &App) {
     let theme = &app.config.theme.colors;
     frame.render_widget(
@@ -1064,8 +1281,11 @@ fn render(frame: &mut Frame, app: &App) {
             .as_ref()
             .filter(|(_, expires)| *expires > Instant::now())
             .map(|(message, _)| message.as_str()),
-        app.loading,
+        app.loading || app.checking_updates,
         (app.started_at.elapsed().as_millis() as usize / 80) % 10,
+        app.update_versions.len(),
+        app.updates_only,
+        app.selected_packages.len(),
     );
     if let Some(password) = app.sudo_password_input.as_ref() {
         render_sudo_password_prompt(frame, areas.status, password.len(), theme);
@@ -1082,6 +1302,16 @@ fn render(frame: &mut Frame, app: &App) {
                 .keymap
                 .get_bindings(Action::TogglePackageDependencies)
                 .format_summary();
+            let updates_key = app
+                .config
+                .keymap
+                .get_bindings(Action::ToggleUpdates)
+                .format_summary();
+            let selection_key = app
+                .config
+                .keymap
+                .get_bindings(Action::TogglePackageSelection)
+                .format_summary();
             help::render(
                 frame,
                 frame.area(),
@@ -1089,18 +1319,25 @@ fn render(frame: &mut Frame, app: &App) {
                 app.config.layout.popup_border_type(),
                 &dependency_key,
                 &package_dependency_key,
+                &updates_key,
+                &selection_key,
                 &app.help_filter,
                 app.help_filtering,
             )
         }
         Some(Overlay::ConfirmUninstall) => {
-            if let (Some(package), Some(command)) = (&app.uninstall_target, &app.uninstall_command)
-            {
+            if !app.uninstall_targets.is_empty() && !app.uninstall_commands.is_empty() {
+                let commands = app
+                    .uninstall_commands
+                    .iter()
+                    .map(|command| command.display.as_str())
+                    .collect::<Vec<_>>()
+                    .join("\n");
                 render_uninstall_confirm(
                     frame,
                     frame.area(),
-                    package,
-                    &command.display,
+                    &app.uninstall_targets,
+                    &commands,
                     theme,
                     app.config.layout.popup_border_type(),
                 );
@@ -1162,6 +1399,8 @@ fn render_packages(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
     let panel_bg = theme.panel_packages_bg_color();
     let title = if app.searching {
         format!(" PACKAGES /{} ", app.query)
+    } else if app.updates_only {
+        format!(" UPDATES ({}) ", app.update_versions.len())
     } else {
         format!(" PACKAGES ({}) ", app.tab.display_name())
     };
@@ -1195,6 +1434,16 @@ fn render_packages(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
             let package = &app.packages[*index];
             let is_selected = position == app.package_index;
             let marker = if is_selected { "▍" } else { " " };
+            let checked = if app.selected_packages.contains(&package_identity(package)) {
+                "✓"
+            } else {
+                " "
+            };
+            let update_mark = if package.latest_version.is_some() {
+                "↑"
+            } else {
+                " "
+            };
             let size = package
                 .size_bytes
                 .map(|bytes| format_bytes(Some(bytes)))
@@ -1204,7 +1453,19 @@ fn render_packages(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
             let spans = vec![
                 Span::styled(marker, Style::default().fg(theme.cursor_bar_color())),
                 Span::styled(
-                    format!("{name:<width$}", width = available_width),
+                    checked,
+                    Style::default()
+                        .fg(theme
+                            .mode_normal_style()
+                            .bg
+                            .unwrap_or(theme.cursor_bar_color()))
+                        .add_modifier(Modifier::BOLD),
+                ),
+                Span::styled(
+                    format!(
+                        "{update_mark}{name:<width$}",
+                        width = available_width.saturating_sub(1)
+                    ),
                     theme.badge_style_for_manager(package.source.name()),
                 ),
                 Span::styled(
@@ -1391,6 +1652,9 @@ fn render_details(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors)
     if let Some(date) = &package.install_date {
         lines.push(detail_line("Installed", date, theme));
     }
+    if let Some(latest) = &package.latest_version {
+        lines.push(detail_line("Available", latest, theme));
+    }
     if let Some(license) = &package.license {
         lines.push(detail_line("License", license, theme));
     }
@@ -1552,19 +1816,27 @@ fn render_uninstall_console(
 fn render_uninstall_confirm(
     frame: &mut Frame,
     area: Rect,
-    package: &UnifiedPackage,
+    packages: &[UnifiedPackage],
     command: &str,
     theme: &ThemeColors,
     border: ratatui::widgets::BorderType,
 ) {
-    let popup = centered(area, 74, 13);
+    let popup = centered(area, 78, 20);
     frame.render_widget(Clear, popup);
+    let names = packages
+        .iter()
+        .map(|package| format!("{} ({})", package.name, package.source))
+        .collect::<Vec<_>>()
+        .join("\n");
     let content = format!(
-        "Remove {} ({})?\n\nRemoving a system package requires administrator privileges. Omni runs normally as your user and requests your sudo password only for this operation. Pacman targets only this package and refuses removal if another installed package requires it.\nCustom managers may run arbitrary configured shell actions.\n\nCommand:\n{}\n\n[y/Enter] confirm   [n/Esc] cancel",
-        package.name, package.source, command
+        "Remove {} package(s)?\n{}\n\nRemoving system packages may require administrator privileges. Omni runs as your user and asks for sudo only for this operation. Pacman removes only named targets and refuses removal if installed packages require them.\nCustom managers may run arbitrary configured shell actions.\n\nCommands:\n{}\n\n[y/Enter] confirm   [n/Esc] cancel",
+        packages.len(),
+        names,
+        command
     );
     frame.render_widget(
         Paragraph::new(content)
+            .scroll((0, 0))
             .wrap(Wrap { trim: true })
             .block(popup_block(" Confirm uninstall ", theme, border)),
         popup,

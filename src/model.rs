@@ -269,6 +269,9 @@ impl std::str::FromStr for SortMode {
 pub struct UnifiedPackage {
     pub name: String,
     pub version: String,
+    /// Newest version reported by the manager during an explicit update check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub latest_version: Option<String>,
     pub source: PackageSource,
     /// Original manager identifier for dynamically configured managers.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -298,6 +301,7 @@ impl UnifiedPackage {
         Self {
             name: name.into(),
             version: version.into(),
+            latest_version: None,
             source,
             manager_id: None,
             install_reason: InstallReason::Unknown,

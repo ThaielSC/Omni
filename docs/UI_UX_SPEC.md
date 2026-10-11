@@ -176,6 +176,7 @@ Al presionar `?` en cualquier momento, se suspende la vista y aparece una ventan
 # Dependencias y operaciones de paquete
 
 - La carga inicial y las recargas no cubren los paneles con un modal: un spinner discreto aparece junto al modo en la status bar. Los errores de lectura de gestores y configuración se presentan como notificaciones temporales en esa misma barra, dejando los paneles disponibles para inventario, detalles y vistas solicitadas.
+- `u` ejecuta bajo demanda una consulta de actualizaciones y filtra la lista a paquetes con una versión nueva disponible; la consulta no corre durante el arranque. `Space` marca paquetes para operaciones por selección múltiple; `d/x` desinstala la selección marcada (o el paquete bajo el cursor si no hay selección).
 
 - `i` abre una sublista inferior de dependencias del paquete actual. `j/k` navega por esa sublista; el panel Details presenta los datos del paquete de dependencia cuando está presente en el inventario. Si el proveedor no publica dependencias, Omni lo indica sin inventar datos.
 - `d/x` sobre un paquete o dependencia abre una confirmación con el nombre, origen y comando exacto. Al aceptar, Details se convierte temporalmente en consola; stdout y stderr aparecen en vivo. `j/k`, `g/G` permiten revisar el log. Al finalizar, el log permanece visible: cambiar el foco fuera de Details lo cierra y vuelve a mostrar los detalles; `r` también cierra el log y actualiza el inventario. Una ejecución activa no se oculta al pulsar `r`.

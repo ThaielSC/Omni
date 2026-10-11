@@ -21,15 +21,20 @@ pub fn render(
     notice: Option<&str>,
     loading: bool,
     spinner_frame: usize,
+    update_count: usize,
+    updates_only: bool,
+    selected_count: usize,
 ) {
     let base = theme.status_bar_style();
-    let mode_style = if searching {
+    let mode_style = if searching || updates_only {
         theme.mode_search_style()
     } else {
         theme.mode_normal_style()
     };
     let mut left = if searching {
         format!(" /{}", query)
+    } else if updates_only {
+        " UPD ".to_owned()
     } else {
         " NOR ".to_owned()
     };
@@ -62,7 +67,24 @@ pub fn render(
     } else {
         "DEPS OFF"
     };
-    let middle = format!(" [{}] {} {}", tab.display_name(), position, package_scope);
+    let update_label = if updates_only {
+        format!(" UPDATES {update_count}")
+    } else {
+        String::new()
+    };
+    let selection_label = if selected_count > 0 {
+        format!("  SEL {selected_count}")
+    } else {
+        String::new()
+    };
+    let middle = format!(
+        " [{}] {} {}{}{}",
+        tab.display_name(),
+        position,
+        package_scope,
+        update_label,
+        selection_label
+    );
     let middle = truncate(&middle, middle_width);
     let spacer = " ".repeat(middle_width.saturating_sub(middle.chars().count()));
     let line = Line::from(vec![
