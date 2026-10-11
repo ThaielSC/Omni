@@ -135,7 +135,9 @@ fn open_append(path: &Path) -> io::Result<File> {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    options.open(path)
+    let file = options.open(path)?;
+    set_private_file_permissions(path)?;
+    Ok(file)
 }
 
 fn rotate_if_needed(path: &Path, current_len: u64) -> io::Result<()> {
@@ -148,7 +150,8 @@ fn rotate_if_needed(path: &Path, current_len: u64) -> io::Result<()> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(error) => return Err(error),
     }
-    fs::rename(path, rotated)
+    fs::rename(path, &rotated)?;
+    set_private_file_permissions(&rotated)
 }
 
 fn rotated_path(path: &Path) -> PathBuf {
@@ -212,8 +215,19 @@ fn set_private_dir_permissions(path: &Path) -> io::Result<()> {
     fs::set_permissions(path, fs::Permissions::from_mode(0o700))
 }
 
+#[cfg(unix)]
+fn set_private_file_permissions(path: &Path) -> io::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    fs::set_permissions(path, fs::Permissions::from_mode(0o600))
+}
+
 #[cfg(not(unix))]
 fn set_private_dir_permissions(_path: &Path) -> io::Result<()> {
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn set_private_file_permissions(_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
