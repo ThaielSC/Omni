@@ -24,7 +24,7 @@ Con `border_style = "none"`, el panel enfocado se distingue además con una barr
 
 El modal de ayuda mantiene un marco redondeado aunque la vista principal use paneles sin bordes. Es compacto, agrupa los atajos por sección con títulos de color y separadores horizontales, y destaca las teclas en bloques. `/` filtra la guía mientras se escribe; el pie recuerda cómo cerrar el modal.
 
-En terminales de menos de 96 columnas, la vista cambia a modo compacto: el panel enfocado ocupa el ancho disponible para mantener legibles los nombres y detalles. `h/l` o `Tab/Shift-Tab` recorren Managers, Packages y Details; la statusline permanece fija abajo. Desde 96 columnas se conserva el diseño simultáneo de tres columnas.
+En terminales de menos de 120 columnas, la vista cambia a modo compacto: el panel enfocado ocupa el ancho disponible para mantener legibles los nombres y detalles. `h/l` o `Tab/Shift-Tab` recorren Managers, Packages y Details; la statusline permanece fija abajo. Desde 120 columnas se conserva el diseño simultáneo de tres columnas.
 
 ---
 

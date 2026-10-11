@@ -22,13 +22,13 @@ Una vez alcanzada la versión 1.0.0:
 
 - [ ] Compilar con `cargo build --release` y pasar `cargo test` en CI sobre una versión soportada de Rust.
 - [x] Manual de instalación, configuración, keybindings, operaciones y limitaciones actualizado; `LICENSE` MIT presente y metadatos Cargo alineados.
-- [ ] Validar la TUI en terminales amplias y estrechas, todos los estilos de paneles, live reload, selección múltiple, ayuda y errores/notificaciones.
+- [x] Validar la TUI en terminales amplias y estrechas, todos los estilos de paneles, live reload, selección múltiple, ayuda y errores/notificaciones. Revisada en PTY de 120×36 y 60×14; la recarga en vivo, Space/comma, modal de ayuda y notificación/log de TOML malformado funcionaron. Tests de buffer verifican los glifos para los cinco estilos con separadores/bordes.
 - [ ] Verificar en un entorno descartable las operaciones reales de listado, updates y desinstalación para cada proveedor habilitado; confirmar flujo de sudo, cancelación y refresco tras éxito. Uninstall/refresco pasó para los seis proveedores globales; updates globales de Pacman, Flatpak, Cargo, uv y pip y Cargo/npm/Bun project add/remove/update también pasaron en entornos temporales. Aún faltan un update real vía yay/AUR y autenticación real de sudo. El flujo de password de Pacman se probó con un helper ficticio y no valida credenciales del sistema. Evidencia en [`PROVIDER_SUPPORT.md`](PROVIDER_SUPPORT.md).
 - [x] Revisar amenazas de comandos personalizados: consultas y actualizaciones usan argv; la plantilla `uninstall_cmd` puede ejecutar shell, se advierte explícitamente y sus valores interpolados se escapan. Resultados y límites del análisis en [`SECURITY_REVIEW.md`](SECURITY_REVIEW.md).
-- [x] Auditar las dependencias bloqueadas contra avisos conocidos; el escaneo RustSec del 2026-10-10 no encontró vulnerabilidades conocidas. Repetirlo antes del release.
+- [x] Auditar las dependencias bloqueadas contra avisos conocidos; el escaneo RustSec actualizado del 2026-10-11 no encontró vulnerabilidades conocidas en 217 dependencias. Repetirlo antes del release.
 - [x] Documentar soporte y límites de cada fuente para tamaño, motivo de instalación, dependencias, resolución de versiones y updates; ningún dato desconocido se debe inventar. Ver [`PROVIDER_SUPPORT.md`](PROVIDER_SUPPORT.md), que también anota los smoke checks de solo lectura hechos en el host.
 - [ ] Cerrar las limitaciones que afecten seguridad/corrección y resolver issues bloqueantes.
-- [x] Crear y verificar un artefacto instalable en un prefijo temporal: `cargo package --allow-dirty --offline` y `cargo install --path target/package/omni-0.1.0-beta.1 --root <prefijo-temporal> --locked --offline`; desde allí funcionaron `omni --version` y `omni --help`, y el prefijo se eliminó al terminar.
+- [x] Crear y verificar un artefacto instalable en un prefijo temporal: en 2026-10-11 `cargo package --allow-dirty --offline` y `cargo install --path target/package/omni-0.1.0-beta.1 --root <prefijo-temporal> --locked --offline` terminaron correctamente; el binario instalado respondió `omni --version` y `omni --help`, y el prefijo temporal se eliminó.
 - [ ] Alinear `Cargo.toml`, `Cargo.lock`, README y notas de release en `1.0.0`; crear tag anotado solo sobre el commit aprobado.
 
 ---

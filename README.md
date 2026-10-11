@@ -52,7 +52,7 @@ La vista principal prioriza la información solicitada y distribuye el espacio e
 
 Los paneles pueden distinguirse con fondos, separadores o bordes. El indicador de foco ayuda a identificar el panel activo. La ayuda contextual se abre con `?`; no hay una fila permanente de atajos ocupando espacio.
 
-En terminales de menos de 96 columnas, Omni muestra el panel enfocado a ancho completo para evitar que nombres y detalles queden truncados. Usa `h/l` o `Tab/Shift-Tab` para cambiar entre Managers, Packages y Details. Con 96 columnas o más, se muestran los tres paneles en paralelo.
+En terminales de menos de 120 columnas, Omni muestra el panel enfocado a ancho completo para evitar que nombres y detalles queden truncados. Usa `h/l` o `Tab/Shift-Tab` para cambiar entre Managers, Packages y Details. Con 120 columnas o más, se muestran los tres paneles en paralelo.
 
 ## Requisitos
 

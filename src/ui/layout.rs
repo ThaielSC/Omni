@@ -14,7 +14,7 @@ pub struct PaneAreas {
 /// Below this width, keeping all three panes visible makes their contents
 /// unreadable. In compact mode the focused pane gets the full content width;
 /// h/l (or Tab/Shift-Tab) still cycles through the panes.
-const COMPACT_WIDTH: u16 = 96;
+const COMPACT_WIDTH: u16 = 120;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocusedPane {
@@ -165,5 +165,19 @@ mod tests {
         assert!(areas.managers.is_some());
         assert!(areas.packages.width > 0);
         assert!(areas.details.is_some());
+    }
+
+    #[test]
+    fn compact_layout_switches_off_at_its_width_boundary() {
+        let config = LayoutConfig::default();
+        let compact = split(Rect::new(0, 0, 119, 24), &config, FocusedPane::Packages);
+        assert!(compact.managers.is_none());
+        assert_eq!(compact.packages.width, 119);
+        assert!(compact.details.is_none());
+
+        let wide = split(Rect::new(0, 0, 120, 24), &config, FocusedPane::Packages);
+        assert!(wide.managers.is_some());
+        assert!(wide.packages.width > 0);
+        assert!(wide.details.is_some());
     }
 }

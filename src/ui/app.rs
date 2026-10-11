@@ -2091,44 +2091,20 @@ fn render_managers(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
             })
             .count()
     });
-    let selected_style = theme.selection_style().add_modifier(Modifier::BOLD);
-    let mut items = FilterTab::ALL
+    let mut rows = FilterTab::ALL
         .iter()
         .enumerate()
         .map(|(index, tab)| {
-            let selected = index == app.manager_index;
-            let mut spans = vec![
-                Span::styled(
-                    if selected { "▍" } else { " " },
-                    if selected {
-                        Style::default().fg(theme.cursor_bar_color())
-                    } else {
-                        Style::default()
-                    },
-                ),
-                // Keep the package-count column aligned with project managers below.
-                Span::raw(format!(" {:<15} {:>5}", tab.display_name(), counts[index])),
-            ];
-            if update_counts[index] > 0 {
-                spans.push(Span::raw(" "));
-                spans.push(Span::styled(
-                    format!("↑{}", update_counts[index]),
-                    Style::default()
-                        .fg(theme.border_focused_color())
-                        .add_modifier(Modifier::BOLD),
-                ));
-            }
-            let line = Line::from(spans);
-            ListItem::new(line).style(if selected {
-                selected_style
-            } else {
-                Style::default().fg(theme.fg_color())
-            })
+            (
+                index,
+                tab.display_name().to_owned(),
+                counts[index],
+                update_counts[index],
+            )
         })
         .collect::<Vec<_>>();
     for (project_index, project) in app.project_managers.iter().enumerate() {
         let index = FilterTab::ALL.len() + project_index;
-        let selected = index == app.manager_index;
         let count = project
             .packages
             .iter()
@@ -2156,39 +2132,90 @@ fn render_managers(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
                         .is_some()
             })
             .count();
-        let mut spans = vec![
-            Span::styled(
-                if selected { "▍" } else { " " },
-                if selected {
-                    Style::default().fg(theme.cursor_bar_color())
-                } else {
-                    Style::default()
-                },
-            ),
-            Span::raw(format!(" {:<15} {:>5}", project.label, count)),
-        ];
-        if update_count > 0 {
-            spans.push(Span::raw(" "));
-            spans.push(Span::styled(
-                format!("↑{update_count}"),
-                Style::default()
-                    .fg(theme.border_focused_color())
-                    .add_modifier(Modifier::BOLD),
-            ));
-        }
-        let line = Line::from(spans);
-        items.push(ListItem::new(line).style(if selected {
-            selected_style
-        } else {
-            Style::default().fg(theme.fg_color())
-        }));
+        rows.push((index, project.label.clone(), count, update_count));
     }
+    let count_width = rows
+        .iter()
+        .map(|(_, _, count, _)| count.to_string().len())
+        .max()
+        .unwrap_or(1);
+    let update_width = rows
+        .iter()
+        .map(|(_, _, _, updates)| {
+            if *updates == 0 {
+                0
+            } else {
+                format!(" ↑{updates}").chars().count()
+            }
+        })
+        .max()
+        .unwrap_or(0);
+    let name_width = (content_area.width as usize)
+        .saturating_sub(3 + count_width + update_width)
+        .max(1);
+    let selected_style = theme.selection_style().add_modifier(Modifier::BOLD);
+    let items = rows
+        .into_iter()
+        .map(|(index, label, count, updates)| {
+            let selected = index == app.manager_index;
+            ListItem::new(manager_row(
+                &label,
+                count,
+                updates,
+                selected,
+                name_width,
+                count_width,
+                theme,
+            ))
+            .style(if selected {
+                selected_style
+            } else {
+                Style::default().fg(theme.fg_color())
+            })
+        })
+        .collect::<Vec<_>>();
     let mut state = ListState::default().with_selected(Some(app.manager_index));
     frame.render_stateful_widget(
         List::new(items).style(Style::default().fg(theme.fg_color()).bg(panel_bg)),
         content_area,
         &mut state,
     );
+}
+
+fn manager_row(
+    label: &str,
+    count: usize,
+    updates: usize,
+    selected: bool,
+    label_width: usize,
+    count_width: usize,
+    theme: &ThemeColors,
+) -> Line<'static> {
+    let label = truncate(label, label_width);
+    let label_padding = label_width.saturating_sub(label.chars().count());
+    let marker_style = if selected {
+        Style::default().fg(theme.cursor_bar_color())
+    } else {
+        Style::default()
+    };
+    let update = if updates > 0 {
+        format!(" ↑{updates}")
+    } else {
+        String::new()
+    };
+    Line::from(vec![
+        Span::styled(if selected { "▍" } else { " " }, marker_style),
+        Span::raw(" "),
+        Span::raw(label),
+        Span::raw(format!("{} ", " ".repeat(label_padding))),
+        Span::raw(format!("{count:>count_width$}")),
+        Span::styled(
+            update,
+            Style::default()
+                .fg(theme.border_focused_color())
+                .add_modifier(Modifier::BOLD),
+        ),
+    ])
 }
 
 fn render_packages(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors) {
@@ -2885,10 +2912,11 @@ fn truncate(value: &str, width: usize) -> String {
 mod uninstall_ui_tests {
     use super::{
         App, Focus, OperationKind, UiEvent, UninstallConsole, dependency_package_name,
-        details_clipboard_text, is_no_updates_exit, render, wait_for_clipboard_child,
+        details_clipboard_text, is_no_updates_exit, manager_row, render, wait_for_clipboard_child,
     };
-    use crate::config::OmniConfig;
+    use crate::config::{OmniConfig, ThemeColors};
     use crate::model::{PackageSource, UnifiedPackage};
+    use ratatui::text::Line;
     use ratatui::{Terminal, backend::TestBackend};
     use std::sync::mpsc;
 
@@ -3007,6 +3035,52 @@ mod uninstall_ui_tests {
                 terminal.draw(|frame| render(frame, &app)).unwrap();
             }
         }
+    }
+
+    #[test]
+    fn panel_styles_render_the_expected_separator_or_border_glyphs() {
+        for (style, glyph) in [
+            ("vertical", "│"),
+            ("rounded", "╭"),
+            ("plain", "┌"),
+            ("thick", "┏"),
+            ("double", "╔"),
+        ] {
+            let (tx, _rx) = mpsc::channel();
+            let mut config = OmniConfig::default();
+            config.layout.border_style = style.to_owned();
+            let mut app = App::new(config, tx);
+            app.loading = false;
+            let backend = TestBackend::new(120, 36);
+            let mut terminal = Terminal::new(backend).unwrap();
+            terminal.draw(|frame| render(frame, &app)).unwrap();
+            assert!(
+                terminal
+                    .backend()
+                    .buffer()
+                    .content
+                    .iter()
+                    .any(|cell| cell.symbol() == glyph),
+                "border style {style} did not render {glyph}"
+            );
+        }
+    }
+
+    #[test]
+    fn manager_rows_keep_counts_aligned_and_updates_visible_at_narrow_widths() {
+        let theme = ThemeColors::default();
+        let pacman = manager_row("Pacman", 199, 2, false, 8, 3, &theme);
+        let project = manager_row("omni[Cargo]", 13, 1, false, 8, 3, &theme);
+        let text = |line: &Line<'static>| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect::<Vec<_>>()
+                .join("")
+        };
+
+        assert_eq!(text(&pacman), "  Pacman   199 ↑2");
+        assert_eq!(text(&project), "  omni[Car  13 ↑1");
     }
 }
 
