@@ -61,6 +61,7 @@ panel_details_bg  = "#32302f"
 selection_bg   = "#45403d"
 selection_fg   = "#d4be98"
 cursor_bar     = "#d8a657"   # Color de la barra indicadora vertical "▍"
+# En border_style = "none", esta barra identifica el panel enfocado.
 
 # Statusline estilo Helix
 status_bar_bg  = "#32302f"
