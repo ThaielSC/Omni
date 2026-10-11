@@ -18,9 +18,20 @@ Una vez alcanzada la versión 1.0.0:
 - **`MINOR` (ej. `v1.1.0`)**: Nuevas características compatibles hacia atrás (ej. soporte nativo para un nuevo gestor, nueva vista en TUI, nuevas opciones en `config.toml`).
 - **`MAJOR` (ej. `v2.0.0`)**: Cambios incompatibles (breaking changes) en el esquema TOML, en la interfaz CLI o en los traits públicos.
 
+### Criterios obligatorios para publicar `v1.0.0`
+
+- [ ] Compilar con `cargo build --release` y pasar `cargo test` en CI sobre una versión soportada de Rust.
+- [ ] Manual de instalación, configuración, keybindings, operaciones y limitaciones actualizado; `LICENSE` MIT presente y metadatos Cargo alineados.
+- [ ] Validar la TUI en terminales amplias y estrechas, todos los estilos de paneles, live reload, selección múltiple, ayuda y errores/notificaciones.
+- [ ] Verificar en un entorno descartable las operaciones reales de listado, updates y desinstalación para cada proveedor habilitado; confirmar flujo de sudo/doas, cancelación y refresco tras éxito.
+- [ ] Revisar amenazas de comandos personalizados: sus consultas y updates usan argv, mientras que cualquier plantilla que ejecute shell debe advertirse explícitamente y tratarse como código confiable.
+- [ ] Documentar soporte y límites de cada fuente para tamaño, motivo de instalación, dependencias, resolución de versiones y updates; ningún dato desconocido se debe inventar.
+- [ ] Cerrar las limitaciones que afecten seguridad/corrección, resolver issues bloqueantes y hacer una prueba de instalación desde un artefacto limpio.
+- [ ] Alinear `Cargo.toml`, `Cargo.lock`, README y notas de release en `1.0.0`; crear tag anotado solo sobre el commit aprobado.
+
 ---
 
 ## 2. Reglas para Crear Tags
-1. Todo tag debe ser anotado (`git tag -a vX.Y.Z -m "mensaje"`).
+1. Todo tag debe ser anotado y creado a través del flujo de GitButler/documentado, no con mutaciones Git directas.
 2. Se crea un tag al completar y superar los criterios de aceptación y auditorías de cada Milestone.
 3. El tag debe coincidir con el campo `version` en `Cargo.toml`.

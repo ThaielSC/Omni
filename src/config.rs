@@ -1130,6 +1130,27 @@ pub struct CustomManagerConfig {
     pub uninstall_cmd: String,
     #[serde(default)]
     pub need_sudo: bool,
+    /// Optional arguments (not a shell command) used to query packages with updates.
+    /// The configured `binary` is executed directly and these tokens are passed as argv.
+    #[serde(default)]
+    pub update_check_cmd: Option<String>,
+    /// Output format for `update_check_cmd`; currently JSON and line_regex are supported.
+    #[serde(default)]
+    pub update_format: Option<OutputFormat>,
+    /// Regex with named captures `name` and `latest_version` for line_regex updates.
+    #[serde(default)]
+    pub update_parse_regex: Option<String>,
+    /// JSON pointer to an array of update records. Omit to use a root array.
+    #[serde(default)]
+    pub update_json_array_path: Option<String>,
+    /// JSON pointers to package name and available version within each update record.
+    #[serde(default)]
+    pub update_json_name: Option<String>,
+    #[serde(default)]
+    pub update_json_latest_version: Option<String>,
+    /// Optional argv template for updating one package; placeholders are substituted per argv token.
+    #[serde(default)]
+    pub update_cmd: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
