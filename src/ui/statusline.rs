@@ -1,6 +1,5 @@
 use ratatui::Frame;
 use ratatui::layout::Rect;
-use ratatui::style::Style;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 
@@ -69,10 +68,4 @@ pub fn render(
 
 fn truncate(value: &str, width: usize) -> String {
     value.chars().take(width).collect()
-}
-
-pub fn modal_title_style(theme: &ThemeColors) -> Style {
-    Style::default()
-        .fg(theme.border_focused_color())
-        .add_modifier(ratatui::style::Modifier::BOLD)
 }
