@@ -2,9 +2,9 @@
 
 Este archivo recoge los cambios relevantes de Omni. Las versiones siguen [SemVer](docs/VERSIONING.md).
 
-## [1.0.0] - 2026-10-11
+## [1.0.0] - Unreleased
 
-Primera versión estable.
+Candidata a primera versión estable; se publicará con el tag `v1.0.0`.
 
 ### Añadido
 

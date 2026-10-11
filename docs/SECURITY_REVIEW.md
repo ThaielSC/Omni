@@ -1,7 +1,7 @@
 # Security review
 
 Review date: 2026-10-11  
-Reviewed revision: merged `main` candidate `1.0.0` (commit `996a1d1` plus release metadata).
+Reviewed revision: Omni `1.0.0` release candidate, reviewed 2026-10-11. Publish only from the merged revision whose GitHub Actions checks have passed.
 
 ## Command execution review
 

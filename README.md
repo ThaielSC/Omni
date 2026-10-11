@@ -2,7 +2,7 @@
 
 Omni es una aplicación de terminal escrita en Rust para consultar y gestionar paquetes instalados mediante varios gestores desde una sola interfaz. Su TUI está pensada para teclado, con navegación inspirada en Vim y Helix, tres paneles y una statusline compacta.
 
-> **Versión:** `1.0.0` (estable). Consulta [limitaciones conocidas](#limitaciones-conocidas) y la [cobertura por proveedor](docs/PROVIDER_SUPPORT.md) antes de usar operaciones de mantenimiento.
+> **Versión candidata:** `1.0.0`. La primera publicación estable se hará al crear el tag `v1.0.0`. Consulta [limitaciones conocidas](#limitaciones-conocidas) y la [cobertura por proveedor](docs/PROVIDER_SUPPORT.md) antes de usar operaciones de mantenimiento.
 
 ## Contenido
 
@@ -10,6 +10,7 @@ Omni es una aplicación de terminal escrita en Rust para consultar y gestionar p
 - [Interfaz](#interfaz)
 - [Requisitos](#requisitos)
 - [Instalación y ejecución](#instalación-y-ejecución)
+- [Descargas Linux](#descargas-linux)
 - [Atajos](#atajos)
 - [Comprobación y actualización de paquetes](#comprobación-y-actualización-de-paquetes)
 - [Selección y desinstalación](#selección-y-desinstalación)
@@ -81,6 +82,15 @@ El comando sin argumentos abre la TUI. Para compilar una versión optimizada:
 cargo build --release
 ./target/release/omni
 ```
+
+## Descargas Linux
+
+La release de GitHub adjuntará dos opciones para Linux x86-64:
+
+- **AppImage:** un solo archivo ejecutable. Descárgalo, marca el archivo como ejecutable y lánzalo desde una terminal. En sistemas sin soporte FUSE puede ejecutarse con `--appimage-extract-and-run`.
+- **Tarball `.tar.gz`:** contiene el binario `omni`, la licencia y este README; extrae el archivo y ejecuta `./omni` desde una terminal.
+
+Durante la revisión de release, el workflow deja esos mismos archivos como artefactos descargables de la ejecución de GitHub Actions. Los paquetes nativos de Arch (`.pkg.tar.zst`/AUR), Debian/Ubuntu (`.deb`) y Fedora (`.rpm`) no se generan todavía. El detalle del soporte y sus requisitos está en [formatos de distribución](docs/DISTRIBUTION.md).
 
 ### Inventario en modo no interactivo
 
@@ -195,7 +205,7 @@ reload = "r"
 help = "?"
 ```
 
-Los cambios válidos se aplican mientras la aplicación está abierta. Si un archivo queda temporalmente inválido durante la edición, Omni mantiene la última configuración válida y muestra una notificación. La referencia completa de opciones está en [CONFIGURATION_SPEC.md](docs/CONFIGURATION_SPEC.md).
+Los cambios válidos se aplican mientras la aplicación está abierta. Si un archivo queda temporalmente inválido durante la edición, Omni mantiene la última configuración válida y muestra una notificación. Las opciones aceptadas se describen en los ejemplos de esta sección; la aplicación también genera valores predeterminados seguros cuando faltan opciones.
 
 El atajo `c` copia el nombre del paquete bajo el cursor. En Linux hace falta un helper de portapapeles: Omni prueba `wl-copy` (paquete `wl-clipboard`), `xclip` y `xsel`, en ese orden. La copia se realiza en segundo plano para no bloquear la TUI; cada helper tiene un límite de espera y, si falla, Omni muestra una notificación. El atajo puede reasignarse con `copy_package_name`.
 
@@ -243,7 +253,7 @@ uninstall_cmd = "npm uninstall -g {name}"
 need_sudo = false
 ```
 
-Los comandos configurados se ejecutan en el sistema. Define solo gestores y comandos que entiendas y sean de confianza. Consulta [MANAGERS_SPEC.md](docs/MANAGERS_SPEC.md) para el esquema y sus reglas.
+Los comandos configurados se ejecutan en el sistema. Define solo gestores y comandos que entiendas y sean de confianza. La cobertura, limitaciones y advertencias de seguridad están documentadas en [cobertura por proveedor](docs/PROVIDER_SUPPORT.md) y [revisión de seguridad](docs/SECURITY_REVIEW.md).
 
 ## Desarrollo y pruebas
 
@@ -267,16 +277,11 @@ El archivo rota al superar 1 MiB, conserva una copia `.log.1` y se crea con perm
 
 ## Documentación
 
-- [Roadmap y hitos](docs/ROADMAP.md)
-- [Especificación de UI/UX](docs/UI_UX_SPEC.md)
-- [Configuración, temas y atajos](docs/CONFIGURATION_SPEC.md)
-- [Gestores personalizados](docs/MANAGERS_SPEC.md)
+- [Formatos de distribución](docs/DISTRIBUTION.md)
 - [Cobertura y límites por proveedor](docs/PROVIDER_SUPPORT.md)
 - [Política de versiones y tags](docs/VERSIONING.md)
 - [Registro de cambios](CHANGELOG.md)
 - [Revisión de seguridad](docs/SECURITY_REVIEW.md)
-- [Flujo de GitButler](docs/GITBUTLER_BRANCHES.md)
-- [Guía de continuación](docs/HANDOFF.md)
 
 ## Limitaciones conocidas
 

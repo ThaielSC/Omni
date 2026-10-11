@@ -1,0 +1,136 @@
+name: Linux release artifacts
+
+on:
+  pull_request:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  package-linux:
+    name: Package Linux x86-64 downloads
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Install stable Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Build optimized binary
+        run: cargo build --release --locked
+
+      - name: Prepare tarball
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
+          if [[ "${GITHUB_REF_TYPE:-branch}" == "tag" && "$GITHUB_REF_NAME" != "v${version}" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match Cargo version $version" >&2
+            exit 1
+          fi
+          mkdir -p dist/tarball
+          install -m 0755 target/release/omni dist/tarball/omni
+          install -m 0644 LICENSE README.md dist/tarball/
+          tar -C dist/tarball -czf "dist/omni-${version}-x86_64-unknown-linux-gnu.tar.gz" .
+
+      - name: Prepare AppImage directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')"
+          appdir="$RUNNER_TEMP/Omni.AppDir"
+          mkdir -p "$appdir/usr/bin" "$appdir/usr/share/applications" "$appdir/usr/share/icons/hicolor/scalable/apps"
+          install -m 0755 target/release/omni "$appdir/usr/bin/omni"
+          cat > "$appdir/omni.desktop" <<'EOF'
+          [Desktop Entry]
+          Type=Application
+          Name=Omni
+          Comment=Inspect and manage package managers from the terminal
+          Exec=AppRun
+          Icon=omni
+          Terminal=true
+          Categories=System;Utility;
+          EOF
+          cp "$appdir/omni.desktop" "$appdir/usr/share/applications/omni.desktop"
+          cat > "$appdir/usr/share/icons/hicolor/scalable/apps/omni.svg" <<'EOF'
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+            <rect x="7" y="12" width="50" height="42" rx="7" fill="#282828" stroke="#d8a657" stroke-width="4"/>
+            <path d="M8 25h48M20 12v13m24-13v13M20 39h24M20 47h14" fill="none" stroke="#d4be98" stroke-linecap="round" stroke-width="4"/>
+          </svg>
+          EOF
+          ln -s usr/share/icons/hicolor/scalable/apps/omni.svg "$appdir/.DirIcon"
+          ln -s usr/bin/omni "$appdir/AppRun"
+          printf 'VERSION=%s\n' "$version" >> "$GITHUB_ENV"
+
+      - name: Install AppImage build tools
+        run: sudo apt-get update && sudo apt-get install --yes jq squashfs-tools
+
+      - name: Download and verify official appimagetool
+        shell: bash
+        run: |
+          set -euo pipefail
+          url="https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage"
+          curl --fail --location --silent --show-error "$url" --output "$RUNNER_TEMP/appimagetool.AppImage"
+          metadata="$(curl --fail --location --silent --show-error https://api.github.com/repos/AppImage/appimagetool/releases/tags/continuous)"
+          digest="$(jq -er '.assets[] | select(.name == "appimagetool-x86_64.AppImage") | .digest' <<<"$metadata")"
+          printf '%s  %s\n' "${digest#sha256:}" "$RUNNER_TEMP/appimagetool.AppImage" | sha256sum --check --status
+          chmod +x "$RUNNER_TEMP/appimagetool.AppImage"
+
+      - name: Build AppImage
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          ARCH=x86_64 VERSION="$VERSION" APPIMAGE_EXTRACT_AND_RUN=1 \
+            "$RUNNER_TEMP/appimagetool.AppImage" --no-appstream "$RUNNER_TEMP/Omni.AppDir" "dist/Omni-${VERSION}-x86_64.AppImage"
+          chmod +x "dist/Omni-${VERSION}-x86_64.AppImage"
+          (cd dist && sha256sum "Omni-${VERSION}-x86_64.AppImage" "omni-${VERSION}-x86_64-unknown-linux-gnu.tar.gz" > SHA256SUMS)
+
+      - name: Upload downloadable build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: omni-linux-x86_64
+          path: |
+            dist/*.AppImage
+            dist/*.tar.gz
+            dist/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+
+  publish-release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package-linux
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v7
+
+      - name: Download Linux artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: omni-linux-x86_64
+          path: dist
+
+      - name: Prepare release notes
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="${GITHUB_REF_NAME#v}"
+          awk -v heading="## [${version}]" '
+            index($0, heading) == 1 { found=1; next }
+            found && /^## \[/ { exit }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          test -s release-notes.md
+
+      - name: Create GitHub Release with Linux downloads
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "Omni $GITHUB_REF_NAME" --notes-file release-notes.md
