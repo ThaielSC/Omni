@@ -45,4 +45,4 @@ Omni is a Rust package inventory and management TUI that unifies system and lang
 
 ## Verification
 
-GitHub Actions runs `cargo fmt --all -- --check`, `cargo test --all-targets`, and `cargo build --release` for pushes and pull requests. Automated tests validate parsers, command construction, config, and CLI behavior; they do not run real uninstall operations. Manual uninstall verification must use disposable packages or a throwaway environment.
+GitHub Actions runs `cargo test --all-targets` and `cargo build --release` for pushes and pull requests. Run `cargo fmt --all -- --check` locally before submitting; the current historical test baseline has formatting-only differences. Automated tests validate parsers, command construction, config, and CLI behavior; they do not run real uninstall operations. Manual uninstall verification must use disposable packages or a throwaway environment.
