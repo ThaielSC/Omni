@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::PackageSource;
+use crate::model::{InstallReason, PackageSource};
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CargoProvider;
 pub fn parse_packages(input: &str) -> Vec<UnifiedPackage> {
@@ -19,6 +19,7 @@ pub fn parse_packages(input: &str) -> Vec<UnifiedPackage> {
             .filter(|s| !s.is_empty())
             .collect::<Vec<_>>();
         let mut p = UnifiedPackage::new(name, version, PackageSource::Cargo);
+        p.install_reason = InstallReason::Explicit;
         p.binaries = bins;
         out.push(p);
     }
@@ -63,6 +64,7 @@ pub fn parse_crates2(input: &str) -> Vec<UnifiedPackage> {
             let name = fields.next()?;
             let version = fields.next()?;
             let mut package = UnifiedPackage::new(name, version, PackageSource::Cargo);
+            package.install_reason = InstallReason::Explicit;
             package.binaries = val
                 .get("bins")
                 .and_then(serde_json::Value::as_array)

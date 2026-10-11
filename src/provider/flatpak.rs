@@ -1,5 +1,5 @@
 use super::*;
-use crate::model::PackageSource;
+use crate::model::{InstallReason, PackageSource};
 #[derive(Debug, Default, Clone, Copy)]
 pub struct FlatpakProvider;
 pub fn parse_packages(input: &str) -> Vec<UnifiedPackage> {
@@ -17,6 +17,7 @@ pub fn parse_packages(input: &str) -> Vec<UnifiedPackage> {
                     .and_then(|x| x.as_str())
                     .unwrap_or("unknown");
                 let mut p = UnifiedPackage::new(name, version, PackageSource::Flatpak);
+                p.install_reason = InstallReason::Explicit;
                 p.description = v
                     .get("description")
                     .and_then(|x| x.as_str())
@@ -38,6 +39,7 @@ pub fn parse_packages(input: &str) -> Vec<UnifiedPackage> {
                 return None;
             }
             let mut p = UnifiedPackage::new(c[0], c[2], PackageSource::Flatpak);
+            p.install_reason = InstallReason::Explicit;
             p.description = Some(c[1].into());
             if let Some(s) = c.get(3).and_then(|x| super::pacman::parse_size(x)) {
                 p.size_bytes = Some(s);
