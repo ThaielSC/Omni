@@ -96,6 +96,10 @@ jobs:
               cat "$appimage_log"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
+            while IFS= read -r line; do
+              escaped="$(printf '%s' "$line" | sed -e 's/%/%25/g' -e 's/\r/%0D/g' -e 's/:/%3A/g' -e 's/,/%2C/g')"
+              printf '::error title=AppImage builder output::%s\n' "$escaped"
+            done < <(tail -n 12 "$appimage_log")
             exit 1
           fi
           chmod +x "dist/Omni-${VERSION}-x86_64.AppImage"
