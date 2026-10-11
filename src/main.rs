@@ -35,8 +35,7 @@ struct Args {
     log_path: bool,
 }
 
-fn execute() -> Result<(), String> {
-    let args = Args::parse();
+fn execute(args: Args) -> Result<(), String> {
     if args.log_path {
         let path = omni::logging::path().map_err(|error| error.to_string())?;
         return write_stdout(&format!("{}\n", path.display()))
@@ -179,7 +178,19 @@ mod output_tests {
         let error = std::io::Error::from(std::io::ErrorKind::BrokenPipe);
         assert!(handle_stdout_result(Err(error)).is_ok());
     }
+
+    #[test]
+    fn log_inspection_commands_do_not_write_to_the_log() {
+        let logs = Args::try_parse_from(["omni", "--logs"]).unwrap();
+        let path = Args::try_parse_from(["omni", "--log-path"]).unwrap();
+        let list = Args::try_parse_from(["omni", "--list"]).unwrap();
+
+        assert!(!should_initialize_logging(&logs));
+        assert!(!should_initialize_logging(&path));
+        assert!(should_initialize_logging(&list));
+    }
 }
+
 fn manager_matches(filter: &str, id: &str) -> bool {
     match filter {
         "yay" | "aur" => id == "yay" || id == "aur",
@@ -188,12 +199,15 @@ fn manager_matches(filter: &str, id: &str) -> bool {
     }
 }
 fn main() -> ExitCode {
-    if let Err(error) = omni::logging::initialize() {
-        eprintln!("omni: persistent logging unavailable: {error}");
-    } else {
-        omni::logging::info("Application started");
+    let args = Args::parse();
+    if should_initialize_logging(&args) {
+        if let Err(error) = omni::logging::initialize() {
+            eprintln!("omni: persistent logging unavailable: {error}");
+        } else {
+            omni::logging::info("Application started");
+        }
     }
-    match std::panic::catch_unwind(execute) {
+    match std::panic::catch_unwind(|| execute(args)) {
         Ok(Ok(())) => ExitCode::SUCCESS,
         Ok(Err(error)) => {
             omni::logging::error(&format!("Application error: {error}"));
@@ -206,4 +220,8 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn should_initialize_logging(args: &Args) -> bool {
+    !args.logs && !args.log_path
 }
