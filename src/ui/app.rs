@@ -1024,7 +1024,7 @@ impl App {
                     self.set_error_notice("Project package is missing manager identity");
                     return;
                 };
-                let Some((_, root)) = manager_id.split_once(":") else {
+                let Some(root) = project_root_from_manager_id(manager_id) else {
                     self.set_error_notice("Invalid project manager identity");
                     return;
                 };
@@ -2841,6 +2841,12 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
     )
 }
 
+fn project_root_from_manager_id(manager_id: &str) -> Option<&str> {
+    let identity = manager_id.strip_prefix("project:")?;
+    let (_, root) = identity.split_once(':')?;
+    (!root.is_empty()).then_some(root)
+}
+
 fn truncate(value: &str, width: usize) -> String {
     value.chars().take(width).collect()
 }
@@ -2870,6 +2876,20 @@ mod uninstall_ui_tests {
         assert!(!is_no_updates_exit("yay", Some(1), b"diagnostic", b""));
         assert!(!is_no_updates_exit("yay", Some(1), b"", b"network error"));
         assert!(is_no_updates_exit("checkupdates", Some(2), b"", b""));
+    }
+
+    #[test]
+    fn extracts_project_root_after_ecosystem_prefix() {
+        assert_eq!(
+            super::project_root_from_manager_id("project:cargo:/tmp/workspace:member"),
+            Some("/tmp/workspace:member")
+        );
+        assert_eq!(
+            super::project_root_from_manager_id("project:npm:/tmp/app"),
+            Some("/tmp/app")
+        );
+        assert_eq!(super::project_root_from_manager_id("project:cargo:"), None);
+        assert_eq!(super::project_root_from_manager_id("cargo:/tmp/app"), None);
     }
 
     #[test]
