@@ -28,4 +28,4 @@ Las ramas aparecen simultáneamente en el workspace GitButler; cada rama hija se
 - Crear commits selectivos con `but commit -b <rama> -m "<mensaje>" <ids>`.
 - Para apilar una rama existente se usa `but move <hija> --above <padre>`.
 - Sincronizar el workspace con `but pull`; publicar y crear PRs con `but push` / `but pr new` según el flujo de la skill local `but`.
-- Las operaciones de desinstalación pasan por confirmación en la TUI; los cambios privilegiados requieren autorización previa (`sudo -v` con sudo).
+- Las operaciones de desinstalación pasan por confirmación en la TUI; para `sudo`, Omni restaura brevemente la terminal y ejecuta `sudo -v` para que el propio sudo solicite la contraseña, sin que Omni la lea ni almacene.
