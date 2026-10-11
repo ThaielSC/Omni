@@ -9,7 +9,7 @@
 
 mod common;
 
-use common::{fixture_path, validate_unified_package_schema, OmniCmd, TempSandbox};
+use common::{OmniCmd, TempSandbox, fixture_path, validate_unified_package_schema};
 use std::fs;
 
 // =============================================================================
@@ -28,7 +28,9 @@ fn test_t1_f1_01_discovery_pacman_packages() {
         .args(["--list", "--json", "--manager", "pacman"])
         .run();
     out.assert_success();
-    let json = out.parse_json().expect("Expected valid JSON from --list --json");
+    let json = out
+        .parse_json()
+        .expect("Expected valid JSON from --list --json");
     let arr = json.as_array().expect("Expected JSON array of packages");
     for pkg in arr {
         validate_unified_package_schema(pkg).expect("Package must match UnifiedPackage schema");
@@ -45,7 +47,9 @@ fn test_t1_f1_02_discovery_flatpak_packages() {
         .args(["--list", "--json", "--manager", "flatpak"])
         .run();
     out.assert_success();
-    let json = out.parse_json().expect("Expected valid JSON from --list --json");
+    let json = out
+        .parse_json()
+        .expect("Expected valid JSON from --list --json");
     let arr = json.as_array().expect("Expected JSON array of packages");
     for pkg in arr {
         validate_unified_package_schema(pkg).expect("Package must match UnifiedPackage schema");
@@ -62,7 +66,9 @@ fn test_t1_f1_03_discovery_cargo_crates() {
         .args(["--list", "--json", "--manager", "cargo"])
         .run();
     out.assert_success();
-    let json = out.parse_json().expect("Expected valid JSON from --list --json");
+    let json = out
+        .parse_json()
+        .expect("Expected valid JSON from --list --json");
     let arr = json.as_array().expect("Expected JSON array of packages");
     for pkg in arr {
         validate_unified_package_schema(pkg).expect("Package must match UnifiedPackage schema");
@@ -79,7 +85,9 @@ fn test_t1_f1_04_discovery_uv_tools() {
         .args(["--list", "--json", "--manager", "uv"])
         .run();
     out.assert_success();
-    let json = out.parse_json().expect("Expected valid JSON from --list --json");
+    let json = out
+        .parse_json()
+        .expect("Expected valid JSON from --list --json");
     let arr = json.as_array().expect("Expected JSON array of packages");
     for pkg in arr {
         validate_unified_package_schema(pkg).expect("Package must match UnifiedPackage schema");
@@ -94,7 +102,9 @@ fn test_t1_f1_04_discovery_uv_tools() {
 fn test_t1_f1_05_discovery_all_managers_unified() {
     let out = OmniCmd::new().args(["--list", "--json"]).run();
     out.assert_success();
-    let json = out.parse_json().expect("Expected valid JSON from --list --json");
+    let json = out
+        .parse_json()
+        .expect("Expected valid JSON from --list --json");
     let arr = json.as_array().expect("Expected JSON array of packages");
     for pkg in arr {
         validate_unified_package_schema(pkg).expect("Package must match UnifiedPackage schema");
@@ -116,7 +126,10 @@ fn test_t1_f2_01_absence_isolated_empty_path() {
     out.assert_success();
     let json = out.parse_json().expect("Expected valid JSON array []");
     let arr = json.as_array().expect("Expected JSON array");
-    assert!(arr.is_empty(), "Empty environment should yield empty package array");
+    assert!(
+        arr.is_empty(),
+        "Empty environment should yield empty package array"
+    );
 }
 
 /// [T1-F2-02] Filter with nonexistent manager name does not panic.
@@ -207,7 +220,11 @@ fn test_t1_f3_02_size_raw_to_human_kib_formatting() {
     // Human listing should contain human units like B, KiB, MiB, GiB or K, M, G
     let stdout = &out.stdout;
     assert!(
-        stdout.contains("B") || stdout.contains("MiB") || stdout.contains("KiB") || stdout.contains("GiB") || stdout.contains("MB"),
+        stdout.contains("B")
+            || stdout.contains("MiB")
+            || stdout.contains("KiB")
+            || stdout.contains("GiB")
+            || stdout.contains("MB"),
         "Stdout should contain formatted byte units"
     );
 }
@@ -274,7 +291,8 @@ fn test_t1_f4_01_sort_by_size_descending() {
             assert!(
                 size <= prev_size,
                 "Sizes must be sorted descending: got {} after {}",
-                size, prev_size
+                size,
+                prev_size
             );
             prev_size = size;
         }
@@ -293,12 +311,17 @@ fn test_t1_f4_02_sort_by_name_ascending() {
     let arr = json.as_array().unwrap();
     let mut prev_name = String::new();
     for pkg in arr {
-        let name = pkg.get("name").and_then(|n| n.as_str()).unwrap().to_lowercase();
+        let name = pkg
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap()
+            .to_lowercase();
         if !prev_name.is_empty() {
             assert!(
                 name >= prev_name,
                 "Names must be sorted ascending: got '{}' after '{}'",
-                name, prev_name
+                name,
+                prev_name
             );
         }
         prev_name = name;
@@ -325,7 +348,10 @@ fn test_t1_f4_04_sort_default_behavior() {
     let out2 = OmniCmd::new().args(["--list", "--json"]).run();
     out1.assert_success();
     out2.assert_success();
-    assert_eq!(out1.stdout, out2.stdout, "Default sort must be deterministic");
+    assert_eq!(
+        out1.stdout, out2.stdout,
+        "Default sort must be deterministic"
+    );
 }
 
 /// [T1-F4-05] Text mode listing supports sort by size.
@@ -408,7 +434,10 @@ fn test_t1_f6_01_filter_pacman_only() {
     let json = out.parse_json().unwrap();
     for pkg in json.as_array().unwrap() {
         assert_eq!(
-            pkg.get("source").and_then(|s| s.as_str()).unwrap().to_lowercase(),
+            pkg.get("source")
+                .and_then(|s| s.as_str())
+                .unwrap()
+                .to_lowercase(),
             "pacman"
         );
     }
@@ -424,7 +453,11 @@ fn test_t1_f6_02_filter_aur_only() {
     out.assert_success();
     let json = out.parse_json().unwrap();
     for pkg in json.as_array().unwrap() {
-        let src = pkg.get("source").and_then(|s| s.as_str()).unwrap().to_lowercase();
+        let src = pkg
+            .get("source")
+            .and_then(|s| s.as_str())
+            .unwrap()
+            .to_lowercase();
         assert!(src == "aur" || src == "yay");
     }
 }
@@ -440,7 +473,10 @@ fn test_t1_f6_03_filter_flatpak_only() {
     let json = out.parse_json().unwrap();
     for pkg in json.as_array().unwrap() {
         assert_eq!(
-            pkg.get("source").and_then(|s| s.as_str()).unwrap().to_lowercase(),
+            pkg.get("source")
+                .and_then(|s| s.as_str())
+                .unwrap()
+                .to_lowercase(),
             "flatpak"
         );
     }
@@ -457,7 +493,10 @@ fn test_t1_f6_04_filter_cargo_only() {
     let json = out.parse_json().unwrap();
     for pkg in json.as_array().unwrap() {
         assert_eq!(
-            pkg.get("source").and_then(|s| s.as_str()).unwrap().to_lowercase(),
+            pkg.get("source")
+                .and_then(|s| s.as_str())
+                .unwrap()
+                .to_lowercase(),
             "cargo"
         );
     }
@@ -484,10 +523,7 @@ fn test_t1_f6_05_filter_all_explicit() {
 #[test]
 fn test_t1_f7_01_config_valid_toml_loading() {
     let cfg = fixture_path("configs/valid_custom.toml");
-    let out = OmniCmd::new()
-        .with_config_file(&cfg)
-        .arg("--list")
-        .run();
+    let out = OmniCmd::new().with_config_file(&cfg).arg("--list").run();
     out.assert_success();
 }
 
@@ -496,10 +532,7 @@ fn test_t1_f7_01_config_valid_toml_loading() {
 #[test]
 fn test_t1_f7_02_config_layout_ratio_parsing() {
     let cfg = fixture_path("configs/minimal.toml");
-    let out = OmniCmd::new()
-        .with_config_file(&cfg)
-        .arg("--list")
-        .run();
+    let out = OmniCmd::new().with_config_file(&cfg).arg("--list").run();
     out.assert_success();
 }
 
@@ -509,10 +542,7 @@ fn test_t1_f7_02_config_layout_ratio_parsing() {
 fn test_t1_f7_03_config_border_styles() {
     let sandbox = TempSandbox::create("border_cfg");
     let path = sandbox.write_file("omni.toml", "[layout]\nborder_style = \"double\"\n");
-    let out = OmniCmd::new()
-        .with_config_file(&path)
-        .arg("--list")
-        .run();
+    let out = OmniCmd::new().with_config_file(&path).arg("--list").run();
     out.assert_success();
 }
 
@@ -521,10 +551,7 @@ fn test_t1_f7_03_config_border_styles() {
 #[test]
 fn test_t1_f7_04_config_theme_colors() {
     let cfg = fixture_path("configs/gruvbox_theme.toml");
-    let out = OmniCmd::new()
-        .with_config_file(&cfg)
-        .arg("--list")
-        .run();
+    let out = OmniCmd::new().with_config_file(&cfg).arg("--list").run();
     out.assert_success();
 }
 
@@ -533,10 +560,7 @@ fn test_t1_f7_04_config_theme_colors() {
 #[test]
 fn test_t1_f7_05_config_behavior_options() {
     let cfg = fixture_path("configs/doas_behavior.toml");
-    let out = OmniCmd::new()
-        .with_config_file(&cfg)
-        .arg("--list")
-        .run();
+    let out = OmniCmd::new().with_config_file(&cfg).arg("--list").run();
     out.assert_success();
 }
 
@@ -969,7 +993,10 @@ fn test_t2_f6_01_filter_case_insensitivity() {
         let json = out.parse_json().unwrap();
         for pkg in json.as_array().unwrap() {
             assert_eq!(
-                pkg.get("source").and_then(|s| s.as_str()).unwrap().to_lowercase(),
+                pkg.get("source")
+                    .and_then(|s| s.as_str())
+                    .unwrap()
+                    .to_lowercase(),
                 "pacman"
             );
         }
@@ -1009,7 +1036,11 @@ fn test_t2_f6_04_filter_python_alias() {
     if out.success {
         let json = out.parse_json().unwrap();
         for pkg in json.as_array().unwrap() {
-            let src = pkg.get("source").and_then(|s| s.as_str()).unwrap().to_lowercase();
+            let src = pkg
+                .get("source")
+                .and_then(|s| s.as_str())
+                .unwrap()
+                .to_lowercase();
             assert!(src == "python" || src == "uv" || src == "pip");
         }
     }
@@ -1039,7 +1070,11 @@ fn test_t2_f6_05_filter_yay_and_aur_alias() {
 #[test]
 fn test_t2_f7_01_config_nonexistent_file_path() {
     let out = OmniCmd::new()
-        .args(["--config", "/nonexistent/directory/path/omni.toml", "--list"])
+        .args([
+            "--config",
+            "/nonexistent/directory/path/omni.toml",
+            "--list",
+        ])
         .run();
     assert!(!out.stderr.contains("panicked at"));
 }
@@ -1049,10 +1084,7 @@ fn test_t2_f7_01_config_nonexistent_file_path() {
 #[test]
 fn test_t2_f7_02_config_malformed_toml_syntax() {
     let cfg = fixture_path("configs/malformed.toml");
-    let out = OmniCmd::new()
-        .with_config_file(&cfg)
-        .arg("--list")
-        .run();
+    let out = OmniCmd::new().with_config_file(&cfg).arg("--list").run();
     out.assert_failure();
     assert!(!out.stderr.contains("panicked at"));
 }
@@ -1062,10 +1094,7 @@ fn test_t2_f7_02_config_malformed_toml_syntax() {
 #[test]
 fn test_t2_f7_03_config_empty_file() {
     let cfg = fixture_path("configs/empty.toml");
-    let out = OmniCmd::new()
-        .with_config_file(&cfg)
-        .arg("--list")
-        .run();
+    let out = OmniCmd::new().with_config_file(&cfg).arg("--list").run();
     out.assert_success();
 }
 
@@ -1074,10 +1103,7 @@ fn test_t2_f7_03_config_empty_file() {
 #[test]
 fn test_t2_f7_04_config_invalid_ratio_dimensions() {
     let cfg = fixture_path("configs/invalid_ratio.toml");
-    let out = OmniCmd::new()
-        .with_config_file(&cfg)
-        .arg("--list")
-        .run();
+    let out = OmniCmd::new().with_config_file(&cfg).arg("--list").run();
     assert!(!out.stderr.contains("panicked at"));
 }
 
@@ -1086,10 +1112,7 @@ fn test_t2_f7_04_config_invalid_ratio_dimensions() {
 #[test]
 fn test_t2_f7_05_config_partial_sections() {
     let cfg = fixture_path("configs/minimal.toml");
-    let out = OmniCmd::new()
-        .with_config_file(&cfg)
-        .arg("--list")
-        .run();
+    let out = OmniCmd::new().with_config_file(&cfg).arg("--list").run();
     out.assert_success();
 }
 
@@ -1135,10 +1158,7 @@ fn test_t2_f8_03_uninstall_nonexistent_package() {
 #[test]
 fn test_t2_f8_04_uninstall_dry_run_flag() {
     let cfg = fixture_path("configs/valid_custom.toml");
-    let out = OmniCmd::new()
-        .with_config_file(&cfg)
-        .arg("--list")
-        .run();
+    let out = OmniCmd::new().with_config_file(&cfg).arg("--list").run();
     out.assert_success();
 }
 
@@ -1167,7 +1187,10 @@ fn test_t3_combo_01_filter_manager_and_sort_size() {
     let mut prev_size = u64::MAX;
     for pkg in arr {
         assert_eq!(
-            pkg.get("source").and_then(|s| s.as_str()).unwrap().to_lowercase(),
+            pkg.get("source")
+                .and_then(|s| s.as_str())
+                .unwrap()
+                .to_lowercase(),
             "cargo"
         );
         if let Some(size) = pkg.get("size_bytes").and_then(|s| s.as_u64()) {
@@ -1190,10 +1213,17 @@ fn test_t3_combo_02_filter_manager_and_sort_name() {
     let mut prev_name = String::new();
     for pkg in arr {
         assert_eq!(
-            pkg.get("source").and_then(|s| s.as_str()).unwrap().to_lowercase(),
+            pkg.get("source")
+                .and_then(|s| s.as_str())
+                .unwrap()
+                .to_lowercase(),
             "pacman"
         );
-        let name = pkg.get("name").and_then(|n| n.as_str()).unwrap().to_lowercase();
+        let name = pkg
+            .get("name")
+            .and_then(|n| n.as_str())
+            .unwrap()
+            .to_lowercase();
         if !prev_name.is_empty() {
             assert!(name >= prev_name);
         }
@@ -1224,7 +1254,10 @@ fn test_t3_combo_04_custom_config_and_json_list() {
         .run();
     out.assert_success();
     let res = out.parse_json();
-    assert!(res.is_ok(), "Stdout must remain clean JSON despite custom config");
+    assert!(
+        res.is_ok(),
+        "Stdout must remain clean JSON despite custom config"
+    );
 }
 
 /// [T3-COMBO-05] Manager filter under absent manager environment returns [] (F2 + F6).
@@ -1288,7 +1321,9 @@ fn test_t3_combo_08_empty_environment_with_sort_and_filter() {
 fn test_t4_scenario_01_full_discovery_json_export() {
     let out = OmniCmd::new().args(["--list", "--json"]).run();
     out.assert_success();
-    let json = out.parse_json().expect("Exported output must be valid JSON");
+    let json = out
+        .parse_json()
+        .expect("Exported output must be valid JSON");
     let packages = json.as_array().expect("Root must be array of packages");
     for pkg in packages {
         validate_unified_package_schema(pkg).expect("Every package must conform to UnifiedPackage");
@@ -1307,8 +1342,15 @@ fn test_t4_scenario_02_filter_by_single_manager() {
     let json = out.parse_json().unwrap();
     let packages = json.as_array().unwrap();
     for pkg in packages {
-        let src = pkg.get("source").and_then(|s| s.as_str()).unwrap().to_lowercase();
-        assert_eq!(src, "cargo", "No packages from other managers must leak into cargo filter");
+        let src = pkg
+            .get("source")
+            .and_then(|s| s.as_str())
+            .unwrap()
+            .to_lowercase();
+        assert_eq!(
+            src, "cargo",
+            "No packages from other managers must leak into cargo filter"
+        );
     }
 }
 
@@ -1382,10 +1424,7 @@ fn test_t4_scenario_05_safe_uninstall_dry_run() {
 fn test_t2_adversarial_crlf_line_endings_in_config() {
     let sandbox = TempSandbox::create("crlf_cfg");
     let path = sandbox.write_file("omni_crlf.toml", "[layout]\r\nratio = [ 1, 2, 3 ]\r\n");
-    let out = OmniCmd::new()
-        .with_config_file(&path)
-        .arg("--list")
-        .run();
+    let out = OmniCmd::new().with_config_file(&path).arg("--list").run();
     out.assert_success();
 }
 
@@ -1404,10 +1443,10 @@ fn test_t2_adversarial_excessive_flags() {
 #[test]
 fn test_t2_adversarial_deep_nested_config() {
     let sandbox = TempSandbox::create("extra_cfg");
-    let path = sandbox.write_file("omni_extra.toml", "[unknown_section]\nfoo = \"bar\"\n[layout]\nratio = [1, 2, 3]\n");
-    let out = OmniCmd::new()
-        .with_config_file(&path)
-        .arg("--list")
-        .run();
+    let path = sandbox.write_file(
+        "omni_extra.toml",
+        "[unknown_section]\nfoo = \"bar\"\n[layout]\nratio = [1, 2, 3]\n",
+    );
+    let out = OmniCmd::new().with_config_file(&path).arg("--list").run();
     out.assert_success();
 }
