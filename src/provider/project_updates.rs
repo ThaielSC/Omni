@@ -34,9 +34,9 @@ struct ManagerPackages {
 }
 
 /// Query project-local managers for newer versions while keeping manifests and
-/// lockfiles untouched. Cargo uses a whole-lockfile `--dry-run` and retains only
-/// direct dependencies in the result; npm's `outdated` and Bun's
-/// `outdated` commands are documented read-only queries.
+/// lockfiles untouched. Cargo and Bun use package-manager dry-run update
+/// commands and retain only direct dependencies in the result; npm's
+/// `outdated` command is a documented read-only query.
 pub fn check_project_updates(
     packages: &[UnifiedPackage],
     config: &ProjectManagersConfig,
@@ -187,21 +187,23 @@ fn parse_npm_outdated(
 fn query_bun(manager: &ManagerPackages, binary: &str) -> Result<HashMap<String, String>, String> {
     let output = Command::new(binary)
         .current_dir(&manager.root)
-        .args(["outdated", "--no-progress"])
+        .args(["update", "--dry-run", "--no-save", "--no-progress"])
         .env("NO_COLOR", "1")
         .output()
-        .map_err(|error| format!("could not start {binary} outdated: {error}"))?;
-    // Bun documents `bun outdated` as read-only. Accept status 1 for the
-    // common CLI convention where outdated dependencies are represented as a
-    // non-zero result, but still require a parseable table.
+        .map_err(|error| format!("could not start {binary} update --dry-run: {error}"))?;
+    // Bun's outdated table can report the locked version in its Update column
+    // even when a compatible newer version exists. Dry-run is read-only and
+    // reports the versions the real update action would install.
     if !output.status.success() && output.status.code() != Some(1) {
-        return Err(command_error(&format!("{binary} outdated"), &output));
+        return Err(command_error(
+            &format!("{binary} update --dry-run"),
+            &output,
+        ));
     }
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let updates = parse_bun_outdated(&stdout, &manager.names);
+    let updates = parse_bun_update_dry_run(&combined_output(&output), &manager.names);
     if !output.status.success() && updates.is_empty() {
         return Err(format!(
-            "{binary} outdated returned status 1 without parseable update rows: {}",
+            "{binary} update --dry-run returned status 1 without parseable update rows: {}",
             diagnostic(&output)
         ));
     }
@@ -263,61 +265,28 @@ fn parse_cargo_dry_run(output: &str, direct_names: &HashSet<String>) -> HashMap<
     updates
 }
 
-fn parse_bun_outdated(output: &str, direct_names: &HashSet<String>) -> HashMap<String, String> {
-    let mut columns = None;
+fn parse_bun_update_dry_run(
+    output: &str,
+    direct_names: &HashSet<String>,
+) -> HashMap<String, String> {
     let mut updates = HashMap::new();
     for raw_line in output.lines() {
-        let line = raw_line.trim();
-        if !line.contains('|') {
-            continue;
-        }
-        let cells = line
-            .trim_matches('|')
-            .split('|')
-            .map(str::trim)
-            .collect::<Vec<_>>();
-        if cells
-            .iter()
-            .any(|cell| cell.eq_ignore_ascii_case("package"))
-            && cells.iter().any(|cell| cell.eq_ignore_ascii_case("update"))
-        {
-            let package_index = cells
-                .iter()
-                .position(|cell| cell.eq_ignore_ascii_case("package"));
-            let current_index = cells
-                .iter()
-                .position(|cell| cell.eq_ignore_ascii_case("current"));
-            let update_index = cells
-                .iter()
-                .position(|cell| cell.eq_ignore_ascii_case("update"));
-            if let (Some(package), Some(current), Some(update)) =
-                (package_index, current_index, update_index)
-            {
-                columns = Some((package, current, update));
+        let line = raw_line.trim().trim_start_matches(['+', '~']).trim_start();
+        for name in direct_names {
+            let Some(version) = line
+                .strip_prefix(name)
+                .and_then(|suffix| suffix.strip_prefix('@'))
+            else {
+                continue;
+            };
+            let version = version
+                .split_whitespace()
+                .next()
+                .unwrap_or_default()
+                .trim_end_matches([',', ')', ']']);
+            if !is_missing_version(version) {
+                updates.insert(name.clone(), version.to_owned());
             }
-            continue;
-        }
-        let Some((package_index, current_index, update_index)) = columns else {
-            continue;
-        };
-        let max_index = package_index.max(current_index).max(update_index);
-        if cells.len() <= max_index {
-            continue;
-        }
-        // Bun annotates rows with their declaration type, e.g. `react (dev)`.
-        let display_name = cells[package_index];
-        let name = display_name
-            .strip_suffix(')')
-            .and_then(|value| value.rsplit_once(" (").map(|(name, _)| name))
-            .unwrap_or(display_name);
-        let current = cells[current_index];
-        let update = cells[update_index];
-        if direct_names.contains(name)
-            && !is_missing_version(current)
-            && !is_missing_version(update)
-            && !same_version(current, update)
-        {
-            updates.insert(name.to_owned(), update.to_owned());
         }
     }
     updates
@@ -395,11 +364,18 @@ mod tests {
     }
 
     #[test]
-    fn bun_parser_handles_table_and_ignores_transitive_names() {
-        let output = "| Package | Current | Update | Latest |\n| --- | --- | --- | --- |\n| react (dev) | 18.2.0 | 18.3.0 | 19.0.0 |\n| transitive | 1.0.0 | 2.0.0 | 2.0.0 |\n";
-        let updates = parse_bun_outdated(output, &names(&["react"]));
-        assert_eq!(updates.get("react").map(String::as_str), Some("18.3.0"));
+    fn bun_dry_run_parser_finds_compatible_updates_and_ignores_transitives() {
+        let output = "bun update v1.3.14\nResolving dependencies\nResolved, downloaded and extracted [4]\n\n semver@7.8.5\n transitive@2.0.0\n[61.00ms] done\n";
+        let updates = parse_bun_update_dry_run(output, &names(&["semver"]));
+        assert_eq!(updates.get("semver").map(String::as_str), Some("7.8.5"));
         assert_eq!(updates.len(), 1);
+    }
+
+    #[test]
+    fn bun_dry_run_parser_handles_scoped_direct_dependencies() {
+        let output = "Resolved, downloaded and extracted [2]\n @scope/pkg@2.4.1\n";
+        let updates = parse_bun_update_dry_run(output, &names(&["@scope/pkg"]));
+        assert_eq!(updates.get("@scope/pkg").map(String::as_str), Some("2.4.1"));
     }
 
     #[test]
