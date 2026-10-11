@@ -247,6 +247,16 @@ cargo test
 
 El proyecto usa la edición 2024 de Rust. La TUI se construye con Ratatui y Crossterm; los proveedores están separados en adaptadores dentro de `src/provider/`. Las pruebas emplean datos de ejemplo y no ejecutan desinstalaciones reales.
 
+## Logs
+
+Omni conserva los avisos breves de la status bar y el resultado de operaciones en un log persistente. No guarda la salida completa de comandos ni datos de autenticación.
+
+- `omni --logs`: muestra las últimas 500 entradas.
+- `omni --log-path`: imprime la ruta del archivo.
+- Ubicación por defecto: `${XDG_STATE_HOME}/omni/omni.log`, o `~/.local/state/omni/omni.log` si `XDG_STATE_HOME` no está configurado.
+
+El archivo rota al superar 1 MiB, conserva una copia `.log.1` y se crea con permisos privados en sistemas Unix.
+
 ## Documentación
 
 - [Roadmap y hitos](docs/ROADMAP.md)

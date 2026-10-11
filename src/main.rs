@@ -27,10 +27,33 @@ struct Args {
     /// Load an explicit Omni config file.
     #[arg(long)]
     config: Option<PathBuf>,
+    /// Print the most recent persistent application log entries.
+    #[arg(long)]
+    logs: bool,
+    /// Print the persistent application log file path.
+    #[arg(long)]
+    log_path: bool,
 }
 
 fn execute() -> Result<(), String> {
     let args = Args::parse();
+    if args.log_path {
+        let path = omni::logging::path().map_err(|error| error.to_string())?;
+        return write_stdout(&format!("{}\n", path.display()))
+            .map_err(|error| format!("could not write output: {error}"));
+    }
+    if args.logs {
+        let output = omni::logging::read_recent(500).map_err(|error| error.to_string())?;
+        let output = if output.is_empty() {
+            format!(
+                "No log entries yet. Log file: {}\n",
+                omni::logging::path().map_err(|e| e.to_string())?.display()
+            )
+        } else {
+            format!("{output}\n")
+        };
+        return write_stdout(&output).map_err(|error| format!("could not write output: {error}"));
+    }
     let mut config = if let Some(path) = args.config.as_deref() {
         let contents = std::fs::read_to_string(path)
             .map_err(|e| format!("cannot read config {}: {e}", path.display()))?;
@@ -165,13 +188,20 @@ fn manager_matches(filter: &str, id: &str) -> bool {
     }
 }
 fn main() -> ExitCode {
+    if let Err(error) = omni::logging::initialize() {
+        eprintln!("omni: persistent logging unavailable: {error}");
+    } else {
+        omni::logging::info("Application started");
+    }
     match std::panic::catch_unwind(execute) {
         Ok(Ok(())) => ExitCode::SUCCESS,
         Ok(Err(error)) => {
+            omni::logging::error(&format!("Application error: {error}"));
             eprintln!("omni: {error}");
             ExitCode::FAILURE
         }
         Err(_) => {
+            omni::logging::error("Unexpected internal error");
             eprintln!("omni: unexpected internal error");
             ExitCode::FAILURE
         }

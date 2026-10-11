@@ -24,6 +24,7 @@ use crate::config::{
     default_keymap_path, default_managers_path, default_theme_path, parse_keymap_toml,
     parse_managers_toml, parse_theme_toml,
 };
+use crate::logging;
 use crate::model::{FilterTab, InstallReason, SortMode, UnifiedPackage};
 use crate::provider::{
     PackageManagerProvider, build_project_add_command, build_project_update_command,
@@ -1164,7 +1165,9 @@ impl App {
     }
 
     fn set_notice(&mut self, message: impl Into<String>) {
-        self.notice = Some((message.into(), Instant::now() + Duration::from_secs(3)));
+        let message = message.into();
+        logging::info(&format!("Notice: {message}"));
+        self.notice = Some((message, Instant::now() + Duration::from_secs(3)));
     }
 
     fn show_next_notice(&mut self) {
@@ -1172,6 +1175,7 @@ impl App {
         else {
             return;
         };
+        logging::warn(&format!("Notice: {message}"));
         self.notice = Some((message, Instant::now() + Duration::from_secs(4)));
     }
 
@@ -1230,6 +1234,20 @@ impl App {
                         Some(code) => format!("\nCommand exited with status {code}."),
                         None => "\nCommand terminated without an exit status.".into(),
                     });
+                }
+                match code {
+                    Some(0) => logging::info(&format!(
+                        "{} command completed successfully",
+                        operation.label()
+                    )),
+                    Some(code) => logging::error(&format!(
+                        "{} command exited with status {code}",
+                        operation.label()
+                    )),
+                    None => logging::warn(&format!(
+                        "{} command terminated without an exit status",
+                        operation.label()
+                    )),
                 }
                 if code == Some(0) {
                     self.set_notice(format!(
