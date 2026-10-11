@@ -20,4 +20,4 @@ Reviewed revision: `feat/updates` after package-update fixes and compact TUI rev
 
 ## Remaining release verification
 
-This review is a source/dependency audit, not proof that every manager behaves correctly on every host. Before a stable release, finish the disposable-environment checks in [`VERSIONING.md`](VERSIONING.md), especially a real yay/AUR update build and real sudo authentication. Never test destructive operations against the user's live package database.
+This review is a source/dependency audit, not proof that every manager behaves correctly on every host. Before a stable release, finish the remaining authentication check in [`VERSIONING.md`](VERSIONING.md): validate Omni's sudo prompt with real host credentials. The AUR build/update has been exercised against a private Pacman root under a user namespace. Never test destructive operations against the user's live package database.
