@@ -19,6 +19,8 @@ pub fn render(
     sort: SortMode,
     show_dependencies: bool,
     notice: Option<&str>,
+    loading: bool,
+    spinner_frame: usize,
 ) {
     let base = theme.status_bar_style();
     let mode_style = if searching {
@@ -33,6 +35,11 @@ pub fn render(
     };
     if searching {
         left.push('▏');
+    }
+    if loading {
+        const SPINNER: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+        left.push(' ');
+        left.push_str(SPINNER[spinner_frame % SPINNER.len()]);
     }
     let position = if count == 0 {
         "0/0".to_owned()
