@@ -25,6 +25,9 @@ pub struct LayoutConfig {
     /// Panel decoration: "rounded", "plain", "thick", "double", "vertical", or "none".
     /// `vertical` draws only dividers between panes; `none` draws no lines.
     pub border_style: String,
+    /// Shared decoration for every floating dialog. Default: `rounded`.
+    /// Accepted styles: rounded, plain, thick, double.
+    pub popup_border_style: String,
     /// Inner cell padding. Default: 1.
     pub padding: u16,
 }
@@ -36,6 +39,7 @@ impl Default for LayoutConfig {
             show_managers: true,
             show_details: true,
             border_style: "none".to_string(),
+            popup_border_style: "rounded".to_string(),
             padding: 1,
         }
     }
@@ -67,13 +71,12 @@ where
 impl LayoutConfig {
     /// Converts the configured `border_style` string to a `ratatui::widgets::BorderType`.
     pub fn border_type(&self) -> BorderType {
-        match self.border_style.to_lowercase().as_str() {
-            "rounded" => BorderType::Rounded,
-            "plain" => BorderType::Plain,
-            "thick" => BorderType::Thick,
-            "double" => BorderType::Double,
-            _ => BorderType::Plain,
-        }
+        parse_border_type(&self.border_style, BorderType::Plain)
+    }
+
+    /// Shared border style for floating windows (help, confirmations, loading).
+    pub fn popup_border_type(&self) -> BorderType {
+        parse_border_type(&self.popup_border_style, BorderType::Rounded)
     }
 
     pub fn has_panel_borders(&self) -> bool {
@@ -107,6 +110,16 @@ impl LayoutConfig {
             constraints.push(Constraint::Ratio(self.ratio[2] as u32, safe_total));
         }
         constraints
+    }
+}
+
+fn parse_border_type(style: &str, fallback: BorderType) -> BorderType {
+    match style.to_lowercase().as_str() {
+        "rounded" => BorderType::Rounded,
+        "plain" => BorderType::Plain,
+        "thick" => BorderType::Thick,
+        "double" => BorderType::Double,
+        _ => fallback,
     }
 }
 
@@ -1255,6 +1268,7 @@ mod tests {
         assert!(layout.show_managers);
         assert!(layout.show_details);
         assert_eq!(layout.border_style, "none");
+        assert_eq!(layout.popup_border_style, "rounded");
         assert_eq!(layout.padding, 1);
         assert_eq!(layout.border_type(), BorderType::Plain);
     }
@@ -1284,6 +1298,23 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(layout_unknown.border_type(), BorderType::Plain);
+    }
+
+    #[test]
+    fn test_popup_border_type_variants_and_fallback() {
+        for (style, expected) in [
+            ("rounded", BorderType::Rounded),
+            ("plain", BorderType::Plain),
+            ("thick", BorderType::Thick),
+            ("double", BorderType::Double),
+            ("invalid", BorderType::Rounded),
+        ] {
+            let layout = LayoutConfig {
+                popup_border_style: style.into(),
+                ..Default::default()
+            };
+            assert_eq!(layout.popup_border_type(), expected);
+        }
     }
 
     #[test]

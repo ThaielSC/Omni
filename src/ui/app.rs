@@ -578,7 +578,7 @@ impl App {
             self.uninstall_target = None;
             self.uninstall_command = None;
             self.set_notice(error.unwrap_or_else(|| {
-                "sudo authorization cancelled; uninstall was not run".to_owned()
+                "sudo authorization failed or was cancelled; uninstall was not run".to_owned()
             }));
         }
     }
@@ -970,7 +970,7 @@ fn render(frame: &mut Frame, app: &App) {
                 frame,
                 frame.area(),
                 theme,
-                app.config.layout.border_type(),
+                app.config.layout.popup_border_type(),
                 &dependency_key,
                 &package_dependency_key,
                 &app.help_filter,
@@ -986,7 +986,7 @@ fn render(frame: &mut Frame, app: &App) {
                     package,
                     &command.display,
                     theme,
-                    app.config.layout.border_type(),
+                    app.config.layout.popup_border_type(),
                 );
             }
         }
@@ -1000,7 +1000,7 @@ fn render(frame: &mut Frame, app: &App) {
                 .block(popup_block(
                     " Loading ",
                     theme,
-                    app.config.layout.border_type(),
+                    app.config.layout.popup_border_type(),
                 ))
                 .alignment(Alignment::Center),
             area,

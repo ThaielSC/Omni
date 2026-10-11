@@ -41,7 +41,7 @@ pub fn render(
     frame: &mut Frame,
     area: Rect,
     theme: &ThemeColors,
-    _border: ratatui::widgets::BorderType,
+    border: ratatui::widgets::BorderType,
     dependency_key: &str,
     package_dependency_key: &str,
     filter: &str,
@@ -61,7 +61,7 @@ pub fn render(
             Style::default().fg(theme.border_color()),
         )))
         .borders(Borders::ALL)
-        .border_type(ratatui::widgets::BorderType::Rounded)
+        .border_type(border)
         .border_style(Style::default().fg(theme.border_focused_color()))
         .style(Style::default().bg(theme.bg_color()).fg(theme.fg_color()));
     let inner = block.inner(popup);
