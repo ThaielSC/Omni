@@ -1611,12 +1611,16 @@ fn check_available_updates(
                 continue;
             }
         };
-        if !output.status.success()
-            && !(binary == "checkupdates" && output.status.code() == Some(2))
-        {
+        let no_updates =
+            is_no_updates_exit(binary, output.status.code(), &output.stdout, &output.stderr);
+        if !output.status.success() && !no_updates {
             errors.push(format!(
                 "Update check ({binary}) failed: {}",
-                String::from_utf8_lossy(&output.stderr).trim()
+                if output.stderr.iter().all(u8::is_ascii_whitespace) {
+                    format!("exit status {} with no diagnostic output", output.status)
+                } else {
+                    String::from_utf8_lossy(&output.stderr).trim().to_owned()
+                }
             ));
             continue;
         }
@@ -1740,6 +1744,14 @@ fn check_available_updates(
         }
     }
     UiEvent::Updates(generation, updates, errors)
+}
+
+fn is_no_updates_exit(binary: &str, code: Option<i32>, stdout: &[u8], stderr: &[u8]) -> bool {
+    (binary == "checkupdates" && code == Some(2))
+        || (binary == "yay"
+            && code == Some(1)
+            && stdout.iter().all(u8::is_ascii_whitespace)
+            && stderr.iter().all(u8::is_ascii_whitespace))
 }
 
 fn copy_to_system_clipboard(text: &str) -> Result<(), String> {
@@ -2660,7 +2672,7 @@ fn truncate(value: &str, width: usize) -> String {
 
 #[cfg(test)]
 mod uninstall_ui_tests {
-    use super::{App, dependency_package_name, render};
+    use super::{App, dependency_package_name, is_no_updates_exit, render};
     use crate::config::OmniConfig;
     use ratatui::{Terminal, backend::TestBackend};
     use std::sync::mpsc;
@@ -2670,6 +2682,15 @@ mod uninstall_ui_tests {
         assert_eq!(dependency_package_name("glibc>=2.38"), "glibc");
         assert_eq!(dependency_package_name("openssl < 4"), "openssl");
         assert_eq!(dependency_package_name("zlib"), "zlib");
+    }
+
+    #[test]
+    fn accepts_yay_empty_status_one_as_no_available_updates() {
+        assert!(is_no_updates_exit("yay", Some(1), b"", b""));
+        assert!(is_no_updates_exit("yay", Some(1), b" \n", b"\t"));
+        assert!(!is_no_updates_exit("yay", Some(1), b"diagnostic", b""));
+        assert!(!is_no_updates_exit("yay", Some(1), b"", b"network error"));
+        assert!(is_no_updates_exit("checkupdates", Some(2), b"", b""));
     }
 
     #[test]

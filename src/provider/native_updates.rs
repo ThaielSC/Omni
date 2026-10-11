@@ -262,8 +262,8 @@ pub fn parse_flatpak_updates(
     Ok(updates)
 }
 
-/// Parse `uv tool list --outdated`, whose text rows include
-/// `name v<installed> (latest: v<latest>)`.
+/// Parse `uv tool list --outdated`, whose text rows include the installed and
+/// latest versions. uv has emitted both `(latest: vX)` and `[latest: X]`.
 pub fn parse_uv_updates(
     input: &str,
     installed: &[UnifiedPackage],
@@ -308,10 +308,15 @@ pub fn parse_uv_updates(
 }
 
 fn parse_uv_latest(rest: &str) -> Option<String> {
-    let marker = "(latest:";
-    let start = rest.find(marker)? + marker.len();
-    let version = rest[start..].trim_start().trim_start_matches('v');
-    let end = version.find(')')?;
+    let (marker, closing) = if let Some(index) = rest.find("(latest:") {
+        (index + "(latest:".len(), ')')
+    } else if let Some(index) = rest.find("[latest:") {
+        (index + "[latest:".len(), ']')
+    } else {
+        return None;
+    };
+    let version = rest[marker..].trim_start().trim_start_matches('v');
+    let end = version.find(closing)?;
     let version = version[..end].trim();
     (!version.is_empty()).then(|| version.to_owned())
 }
@@ -456,15 +461,33 @@ mod tests {
 
     #[test]
     fn parses_uv_outdated_tool_text() {
-        let installed = [package("ruff", "0.11.0", PackageSource::Uv)];
+        let installed = [
+            package("ruff", "0.11.0", PackageSource::Uv),
+            package("harlequin", "2.16.0", PackageSource::Uv),
+            package("pyright", "1.1.411", PackageSource::Uv),
+        ];
         let updates = parse_uv_updates(
-            "ruff v0.11.0 (latest: v0.11.2)\nblack v24.10.0 (latest: v25.1.0)\n",
+            "ruff v0.11.0 (latest: v0.11.2)\nblack v24.10.0 (latest: v25.1.0)\nharlequin v2.16.0 [latest: 2.16.1]\n- harlequin\npyright v1.1.411 [latest: 1.1.414]\n- pyright-langserver\n",
             &installed,
         )
         .unwrap();
-        assert_eq!(updates.len(), 1);
-        assert_eq!(updates[0].installed_version.as_deref(), Some("0.11.0"));
-        assert_eq!(updates[0].latest_version, "0.11.2");
+        assert_eq!(updates.len(), 3);
+        let ruff = updates
+            .iter()
+            .find(|update| update.package_name == "ruff")
+            .unwrap();
+        assert_eq!(ruff.installed_version.as_deref(), Some("0.11.0"));
+        assert_eq!(ruff.latest_version, "0.11.2");
+        let harlequin = updates
+            .iter()
+            .find(|update| update.package_name == "harlequin")
+            .unwrap();
+        assert_eq!(harlequin.latest_version, "2.16.1");
+        let pyright = updates
+            .iter()
+            .find(|update| update.package_name == "pyright")
+            .unwrap();
+        assert_eq!(pyright.latest_version, "1.1.414");
     }
 
     #[test]

@@ -33,6 +33,7 @@ Omni is a Rust package inventory and management TUI that unifies system and lang
 - [x] Read-only update discovery for Cargo/npm/Bun project dependencies, with manager-specific commands to update selected packages.
 - [x] Opt-in update discovery and argv-based update commands for custom managers.
 - [x] Enrich package metadata for pip, Flatpak runtime requirements, and custom manager JSON/info/size commands where available.
+- [x] Persist user-visible notices and operation summaries in a private, rotating log; expose `omni --logs` and `omni --log-path`.
 - [ ] Manually exercise each available manager and privilege-helper path in a disposable test environment.
 - [ ] Complete release/security review and confirm all acceptance criteria in [`VERSIONING.md`](VERSIONING.md).
 
