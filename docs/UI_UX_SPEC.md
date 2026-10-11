@@ -20,6 +20,10 @@
 
 `[layout].border_style` admite `none` (predeterminado, fondos distintos), `vertical` (solo separadores entre paneles), `rounded`, `plain`, `thick` y `double`. En `[theme.colors]`, `panel_managers_bg`, `panel_packages_bg` y `panel_details_bg` personalizan los fondos individuales.
 
+Con `border_style = "none"`, el panel enfocado se distingue además con una barra vertical `▍` en el borde izquierdo, coloreada por `theme.colors.cursor_bar`. El espacio de esa barra se reserva en los tres paneles para que el contenido no se desplace al cambiar el foco. La marca es deliberadamente estrecha: hace evidente el foco sin añadir marcos ni ruido visual. En los otros estilos, el foco se comunica mediante el borde y el título del panel.
+
+El modal de ayuda mantiene un marco redondeado aunque la vista principal use paneles sin bordes. Su título, grupos de atajos y teclas resaltadas crean jerarquía visual; una indicación discreta al pie recuerda que `Esc` o `q` lo cierran.
+
 ---
 
 ## 📺 Pantalla 1: Vista Principal (Modo NORMAL)
