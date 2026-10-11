@@ -85,8 +85,19 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          ARCH=x86_64 VERSION="$VERSION" APPIMAGE_EXTRACT_AND_RUN=1 \
-            "$RUNNER_TEMP/appimagetool.AppImage" --no-appstream "$RUNNER_TEMP/Omni.AppDir" "dist/Omni-${VERSION}-x86_64.AppImage"
+          appimage_log="$RUNNER_TEMP/appimagetool.log"
+          if ! ARCH=x86_64 VERSION="$VERSION" APPIMAGE_EXTRACT_AND_RUN=1 \
+            "$RUNNER_TEMP/appimagetool.AppImage" --appimage-extract-and-run --no-appstream --verbose \
+            "$RUNNER_TEMP/Omni.AppDir" "dist/Omni-${VERSION}-x86_64.AppImage" 2>&1 | tee "$appimage_log"; then
+            {
+              echo '### AppImage build failed'
+              echo 'Verbose `appimagetool` output:'
+              echo '```text'
+              cat "$appimage_log"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
           chmod +x "dist/Omni-${VERSION}-x86_64.AppImage"
           (cd dist && sha256sum "Omni-${VERSION}-x86_64.AppImage" "omni-${VERSION}-x86_64-unknown-linux-gnu.tar.gz" > SHA256SUMS)
 
