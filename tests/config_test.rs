@@ -5,13 +5,12 @@
 //! - .agents/teamwork/PROJECT.md
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use omni::config::{
+    Action, KeyBindings, KeymapConfig, LayoutConfig, OmniConfig, OutputFormat, ThemeColors,
+    parse_hex_color, parse_key_event, parse_keymap_toml, parse_managers_toml, parse_theme_toml,
+};
 use ratatui::style::Color;
 use ratatui::widgets::BorderType;
-use omni::config::{
-    parse_hex_color, parse_key_event, parse_keymap_toml, parse_managers_toml,
-    parse_theme_toml, Action, KeyBindings, KeymapConfig, LayoutConfig, OmniConfig,
-    OutputFormat, ThemeColors,
-};
 use std::panic;
 
 // =============================================================================
@@ -50,7 +49,8 @@ fn test_stress_incomplete_toml_subsections() {
         sudo_command = "pkexec"
         confirm_uninstall = false
     "#;
-    let cfg2 = OmniConfig::from_toml_str(toml_behavior_only).expect("Partial behavior must succeed");
+    let cfg2 =
+        OmniConfig::from_toml_str(toml_behavior_only).expect("Partial behavior must succeed");
     assert_eq!(cfg2.behavior.sudo_command, "pkexec");
     assert!(!cfg2.behavior.confirm_uninstall);
     assert!(cfg2.behavior.preload_disk_sizes); // default retained
@@ -82,15 +82,15 @@ fn test_stress_incomplete_toml_subsections() {
 #[test]
 fn test_stress_malformed_toml_syntax_reports_clean_error() {
     let malformed_cases = [
-        "[layout\nratio = [1, 2, 3]",                  // Unclosed table header
-        "[layout]\nratio = [1, 2,",                    // Unclosed array
-        "[layout]\nborder_style = \"rounded",          // Unclosed string literal
-        "???? not valid toml ????",                    // Syntax gibberish
-        "[layout]\nratio = [1, 2, 3]\n[layout]\n",     // Duplicate table definition
-        "[layout]\nratio = \"invalid_type\"",          // Type mismatch (string instead of array)
-        "[layout]\nshow_managers = 12345",             // Type mismatch (number instead of bool)
-        "[layout]\npadding = -10",                     // Type mismatch (negative u16)
-        "[behavior]\nconfirm_uninstall = \"yes\"",     // Type mismatch (string instead of bool)
+        "[layout\nratio = [1, 2, 3]",              // Unclosed table header
+        "[layout]\nratio = [1, 2,",                // Unclosed array
+        "[layout]\nborder_style = \"rounded",      // Unclosed string literal
+        "???? not valid toml ????",                // Syntax gibberish
+        "[layout]\nratio = [1, 2, 3]\n[layout]\n", // Duplicate table definition
+        "[layout]\nratio = \"invalid_type\"",      // Type mismatch (string instead of array)
+        "[layout]\nshow_managers = 12345",         // Type mismatch (number instead of bool)
+        "[layout]\npadding = -10",                 // Type mismatch (negative u16)
+        "[behavior]\nconfirm_uninstall = \"yes\"", // Type mismatch (string instead of bool)
     ];
 
     for case in malformed_cases {
@@ -248,7 +248,9 @@ fn test_stress_keymap_notation_single_chars() {
     }
 
     // Punctuation and symbols
-    let symbols = ["/", "?", "-", "+", ".", ",", ":", ";", "=", "_", "!", "@", "#", "$", "%", "^", "&", "*"];
+    let symbols = [
+        "/", "?", "-", "+", ".", ",", ":", ";", "=", "_", "!", "@", "#", "$", "%", "^", "&", "*",
+    ];
     for sym in symbols {
         let ev = parse_key_event(sym).unwrap_or_else(|_| panic!("Failed parsing symbol '{}'", sym));
         assert_eq!(ev.code, KeyCode::Char(sym.chars().next().unwrap()));
@@ -302,7 +304,11 @@ fn test_stress_keymap_notation_bracketed_special_keys() {
         let ev = parse_key_event(notation)
             .unwrap_or_else(|_| panic!("Failed parsing notation '{}'", notation));
         assert_eq!(ev.code, expected_code, "Mismatch code for '{}'", notation);
-        assert_eq!(ev.modifiers, expected_mods, "Mismatch mods for '{}'", notation);
+        assert_eq!(
+            ev.modifiers, expected_mods,
+            "Mismatch mods for '{}'",
+            notation
+        );
     }
 }
 
@@ -350,16 +356,36 @@ fn test_stress_keymap_notation_modifier_chords() {
         ("<C-Space>", KeyCode::Char(' '), KeyModifiers::CONTROL),
         ("<A-Space>", KeyCode::Char(' '), KeyModifiers::ALT),
         // Multi-modifier chords
-        ("<C-A-x>", KeyCode::Char('x'), KeyModifiers::CONTROL | KeyModifiers::ALT),
-        ("<Ctrl-Alt-Delete>", KeyCode::Delete, KeyModifiers::CONTROL | KeyModifiers::ALT),
-        ("<C-S-c>", KeyCode::Char('C'), KeyModifiers::CONTROL | KeyModifiers::SHIFT),
+        (
+            "<C-A-x>",
+            KeyCode::Char('x'),
+            KeyModifiers::CONTROL | KeyModifiers::ALT,
+        ),
+        (
+            "<Ctrl-Alt-Delete>",
+            KeyCode::Delete,
+            KeyModifiers::CONTROL | KeyModifiers::ALT,
+        ),
+        (
+            "<C-S-c>",
+            KeyCode::Char('C'),
+            KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+        ),
     ];
 
     for (notation, expected_code, expected_mods) in chord_vectors {
         let ev = parse_key_event(notation)
             .unwrap_or_else(|_| panic!("Failed parsing chord '{}'", notation));
-        assert_eq!(ev.code, expected_code, "Mismatch code for chord '{}'", notation);
-        assert_eq!(ev.modifiers, expected_mods, "Mismatch mods for chord '{}'", notation);
+        assert_eq!(
+            ev.code, expected_code,
+            "Mismatch code for chord '{}'",
+            notation
+        );
+        assert_eq!(
+            ev.modifiers, expected_mods,
+            "Mismatch mods for chord '{}'",
+            notation
+        );
     }
 }
 
@@ -368,7 +394,11 @@ fn test_stress_key_matching_semantics() {
     let keymap = KeymapConfig::default();
 
     // 1. Release events must NEVER match
-    let release_q = KeyEvent::new_with_kind(KeyCode::Char('q'), KeyModifiers::NONE, KeyEventKind::Release);
+    let release_q = KeyEvent::new_with_kind(
+        KeyCode::Char('q'),
+        KeyModifiers::NONE,
+        KeyEventKind::Release,
+    );
     assert!(!keymap.matches(Action::Quit, &release_q));
 
     // 2. Control chord case and shift semantics:
@@ -383,7 +413,10 @@ fn test_stress_key_matching_semantics() {
         quit: KeyBindings::new(["<C-C>"]),
         ..Default::default()
     };
-    let ctrl_c_with_shift = KeyEvent::new(KeyCode::Char('c'), KeyModifiers::CONTROL | KeyModifiers::SHIFT);
+    let ctrl_c_with_shift = KeyEvent::new(
+        KeyCode::Char('c'),
+        KeyModifiers::CONTROL | KeyModifiers::SHIFT,
+    );
     let ctrl_c_upper = KeyEvent::new(KeyCode::Char('C'), KeyModifiers::CONTROL);
     assert!(custom_keymap.matches(Action::Quit, &ctrl_c_with_shift));
     assert!(custom_keymap.matches(Action::Quit, &ctrl_c_upper));
@@ -413,15 +446,15 @@ fn test_stress_key_matching_semantics() {
 #[test]
 fn test_stress_keymap_notation_malformed_inputs() {
     let malformed_inputs = [
-        "",                          // Empty string
-        "   ",                       // Whitespace only
-        "<>",                        // Empty angle brackets
-        "<UnknownModifier-c>",       // Invalid modifier
-        "<C-UnknownKeyName>",        // Invalid key name
-        "<F0>",                      // Out of range F-key
-        "<F13>",                     // Out of range F-key
-        "<F99>",                     // Out of range F-key
-        "<--",                       // Broken chord syntax
+        "",                    // Empty string
+        "   ",                 // Whitespace only
+        "<>",                  // Empty angle brackets
+        "<UnknownModifier-c>", // Invalid modifier
+        "<C-UnknownKeyName>",  // Invalid key name
+        "<F0>",                // Out of range F-key
+        "<F13>",               // Out of range F-key
+        "<F99>",               // Out of range F-key
+        "<--",                 // Broken chord syntax
     ];
 
     for input in malformed_inputs {
@@ -442,14 +475,29 @@ fn test_stress_keymap_notation_malformed_inputs() {
 #[test]
 fn test_stress_theme_colors_valid_hex_and_named() {
     // 6-digit hex with hash
-    assert_eq!(parse_hex_color("#282828").unwrap(), Color::Rgb(0x28, 0x28, 0x28));
-    assert_eq!(parse_hex_color("#d4be98").unwrap(), Color::Rgb(0xd4, 0xbe, 0x98));
-    assert_eq!(parse_hex_color("#ffffff").unwrap(), Color::Rgb(255, 255, 255));
+    assert_eq!(
+        parse_hex_color("#282828").unwrap(),
+        Color::Rgb(0x28, 0x28, 0x28)
+    );
+    assert_eq!(
+        parse_hex_color("#d4be98").unwrap(),
+        Color::Rgb(0xd4, 0xbe, 0x98)
+    );
+    assert_eq!(
+        parse_hex_color("#ffffff").unwrap(),
+        Color::Rgb(255, 255, 255)
+    );
     assert_eq!(parse_hex_color("#000000").unwrap(), Color::Rgb(0, 0, 0));
 
     // 6-digit hex without hash
-    assert_eq!(parse_hex_color("282828").unwrap(), Color::Rgb(0x28, 0x28, 0x28));
-    assert_eq!(parse_hex_color("ffffff").unwrap(), Color::Rgb(255, 255, 255));
+    assert_eq!(
+        parse_hex_color("282828").unwrap(),
+        Color::Rgb(0x28, 0x28, 0x28)
+    );
+    assert_eq!(
+        parse_hex_color("ffffff").unwrap(),
+        Color::Rgb(255, 255, 255)
+    );
 
     // 3-digit shorthand with hash (#rgb -> r*17, g*17, b*17)
     assert_eq!(parse_hex_color("#fff").unwrap(), Color::Rgb(255, 255, 255));
@@ -460,8 +508,14 @@ fn test_stress_theme_colors_valid_hex_and_named() {
     assert_eq!(parse_hex_color("fff").unwrap(), Color::Rgb(255, 255, 255));
 
     // Case insensitivity
-    assert_eq!(parse_hex_color("#D4BE98").unwrap(), Color::Rgb(0xd4, 0xbe, 0x98));
-    assert_eq!(parse_hex_color("#AaBbCc").unwrap(), Color::Rgb(0xaa, 0xbb, 0xcc));
+    assert_eq!(
+        parse_hex_color("#D4BE98").unwrap(),
+        Color::Rgb(0xd4, 0xbe, 0x98)
+    );
+    assert_eq!(
+        parse_hex_color("#AaBbCc").unwrap(),
+        Color::Rgb(0xaa, 0xbb, 0xcc)
+    );
 
     // Named ANSI colors
     let named = [
@@ -496,27 +550,27 @@ fn test_stress_theme_colors_valid_hex_and_named() {
 #[test]
 fn test_stress_theme_colors_invalid_hex_strings_never_panic() {
     let invalid_colors = [
-        "",                     // Empty
-        "   ",                  // Whitespace
-        "#",                    // Hash only
-        "#1",                   // 1 hex digit
-        "#12",                  // 2 hex digits
-        "#1234",                // 4 hex digits
-        "#12345",               // 5 hex digits
-        "#1234567",             // 7 hex digits
-        "#12345678",            // 8 hex digits (RGBA)
-        "#gggggg",              // Invalid hex chars in 6-digit
-        "#12z456",              // Invalid hex char in middle
-        "#ggg",                 // Invalid hex chars in 3-digit
-        "#1z3",                 // Invalid hex char in 3-digit
-        "1",                    // Bare 1 char
-        "12",                   // Bare 2 chars
-        "1234",                 // Bare 4 chars
-        "12345",                // Bare 5 chars
-        "1234567",              // Bare 7 chars
-        "not_a_color",          // Unknown name
-        "rgb(255,0,0)",         // CSS rgb syntax
-        "hsl(0, 100%, 50%)",    // CSS hsl syntax
+        "",                  // Empty
+        "   ",               // Whitespace
+        "#",                 // Hash only
+        "#1",                // 1 hex digit
+        "#12",               // 2 hex digits
+        "#1234",             // 4 hex digits
+        "#12345",            // 5 hex digits
+        "#1234567",          // 7 hex digits
+        "#12345678",         // 8 hex digits (RGBA)
+        "#gggggg",           // Invalid hex chars in 6-digit
+        "#12z456",           // Invalid hex char in middle
+        "#ggg",              // Invalid hex chars in 3-digit
+        "#1z3",              // Invalid hex char in 3-digit
+        "1",                 // Bare 1 char
+        "12",                // Bare 2 chars
+        "1234",              // Bare 4 chars
+        "12345",             // Bare 5 chars
+        "1234567",           // Bare 7 chars
+        "not_a_color",       // Unknown name
+        "rgb(255,0,0)",      // CSS rgb syntax
+        "hsl(0, 100%, 50%)", // CSS hsl syntax
     ];
 
     for invalid in invalid_colors {
@@ -601,17 +655,47 @@ fn test_stress_theme_size_and_badge_helpers() {
     assert_eq!(style_none.fg, Some(Color::Rgb(0xa9, 0xb6, 0x65)));
 
     // Badge helpers:
-    assert_eq!(colors.badge_style_for_manager("pacman").fg, Some(Color::Rgb(0x7d, 0xae, 0xa3)));
-    assert_eq!(colors.badge_style_for_manager("PACMAN").fg, Some(Color::Rgb(0x7d, 0xae, 0xa3)));
-    assert_eq!(colors.badge_style_for_manager("aur").fg, Some(Color::Rgb(0xe7, 0x8a, 0x4e)));
-    assert_eq!(colors.badge_style_for_manager("yay").fg, Some(Color::Rgb(0xe7, 0x8a, 0x4e)));
-    assert_eq!(colors.badge_style_for_manager("flatpak").fg, Some(Color::Rgb(0xd3, 0x86, 0x9b)));
-    assert_eq!(colors.badge_style_for_manager("cargo").fg, Some(Color::Rgb(0xea, 0x69, 0x62)));
-    assert_eq!(colors.badge_style_for_manager("python").fg, Some(Color::Rgb(0xd8, 0xa6, 0x57)));
-    assert_eq!(colors.badge_style_for_manager("uv").fg, Some(Color::Rgb(0xd8, 0xa6, 0x57)));
-    assert_eq!(colors.badge_style_for_manager("pip").fg, Some(Color::Rgb(0xd8, 0xa6, 0x57)));
+    assert_eq!(
+        colors.badge_style_for_manager("pacman").fg,
+        Some(Color::Rgb(0x7d, 0xae, 0xa3))
+    );
+    assert_eq!(
+        colors.badge_style_for_manager("PACMAN").fg,
+        Some(Color::Rgb(0x7d, 0xae, 0xa3))
+    );
+    assert_eq!(
+        colors.badge_style_for_manager("aur").fg,
+        Some(Color::Rgb(0xe7, 0x8a, 0x4e))
+    );
+    assert_eq!(
+        colors.badge_style_for_manager("yay").fg,
+        Some(Color::Rgb(0xe7, 0x8a, 0x4e))
+    );
+    assert_eq!(
+        colors.badge_style_for_manager("flatpak").fg,
+        Some(Color::Rgb(0xd3, 0x86, 0x9b))
+    );
+    assert_eq!(
+        colors.badge_style_for_manager("cargo").fg,
+        Some(Color::Rgb(0xea, 0x69, 0x62))
+    );
+    assert_eq!(
+        colors.badge_style_for_manager("python").fg,
+        Some(Color::Rgb(0xd8, 0xa6, 0x57))
+    );
+    assert_eq!(
+        colors.badge_style_for_manager("uv").fg,
+        Some(Color::Rgb(0xd8, 0xa6, 0x57))
+    );
+    assert_eq!(
+        colors.badge_style_for_manager("pip").fg,
+        Some(Color::Rgb(0xd8, 0xa6, 0x57))
+    );
     // Unknown manager fallback
-    assert_eq!(colors.badge_style_for_manager("unknown_mgr").fg, Some(Color::Rgb(0xd4, 0xbe, 0x98)));
+    assert_eq!(
+        colors.badge_style_for_manager("unknown_mgr").fg,
+        Some(Color::Rgb(0xd4, 0xbe, 0x98))
+    );
 }
 
 // =============================================================================

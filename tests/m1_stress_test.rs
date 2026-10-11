@@ -17,7 +17,10 @@ fn test_stress_parse_size_all_units() {
     assert_eq!(parse_size_to_bytes("1 KiB"), Some(1024));
     assert_eq!(parse_size_to_bytes("1 MiB"), Some(1024 * 1024));
     assert_eq!(parse_size_to_bytes("1 GiB"), Some(1024 * 1024 * 1024));
-    assert_eq!(parse_size_to_bytes("1 TiB"), Some(1024 * 1024 * 1024 * 1024));
+    assert_eq!(
+        parse_size_to_bytes("1 TiB"),
+        Some(1024 * 1024 * 1024 * 1024)
+    );
 
     // SI decimal units
     assert_eq!(parse_size_to_bytes("1 kB"), Some(1000));
@@ -32,8 +35,14 @@ fn test_stress_parse_size_all_units() {
     assert_eq!(parse_size_to_bytes("5 MIB"), Some(5 * 1024 * 1024));
     assert_eq!(parse_size_to_bytes("5 gib"), Some(5 * 1024 * 1024 * 1024));
     assert_eq!(parse_size_to_bytes("5 GIB"), Some(5 * 1024 * 1024 * 1024));
-    assert_eq!(parse_size_to_bytes("5 tib"), Some(5 * 1024 * 1024 * 1024 * 1024));
-    assert_eq!(parse_size_to_bytes("5 TIB"), Some(5 * 1024 * 1024 * 1024 * 1024));
+    assert_eq!(
+        parse_size_to_bytes("5 tib"),
+        Some(5 * 1024 * 1024 * 1024 * 1024)
+    );
+    assert_eq!(
+        parse_size_to_bytes("5 TIB"),
+        Some(5 * 1024 * 1024 * 1024 * 1024)
+    );
     assert_eq!(parse_size_to_bytes("5 kb"), Some(5000));
     assert_eq!(parse_size_to_bytes("5 KB"), Some(5000));
     assert_eq!(parse_size_to_bytes("5 mb"), Some(5_000_000));
@@ -58,12 +67,18 @@ fn test_stress_parse_size_extreme_and_boundary_bytes() {
     assert_eq!(parse_size_to_bytes("0.5 B"), Some(1)); // 0.5.round() -> 1
     assert_eq!(parse_size_to_bytes("0.4 B"), Some(0));
     assert_eq!(parse_size_to_bytes("1.5 KiB"), Some(1536)); // 1.5 * 1024 = 1536
-    assert_eq!(parse_size_to_bytes("2.25 MiB"), Some((2.25 * 1048576.0) as u64));
+    assert_eq!(
+        parse_size_to_bytes("2.25 MiB"),
+        Some((2.25 * 1048576.0) as u64)
+    );
 
     // Raw integers up to u64::MAX
     assert_eq!(parse_size_to_bytes("1"), Some(1));
     assert_eq!(parse_size_to_bytes("18446744073709551615"), Some(u64::MAX));
-    assert_eq!(parse_size_to_bytes("18446744073709551614"), Some(u64::MAX - 1));
+    assert_eq!(
+        parse_size_to_bytes("18446744073709551614"),
+        Some(u64::MAX - 1)
+    );
 
     // Large sizes with units
     let tib_16 = 16.0 * 1024.0 * 1024.0 * 1024.0 * 1024.0;
@@ -74,7 +89,10 @@ fn test_stress_parse_size_extreme_and_boundary_bytes() {
     assert_eq!(parse_size_to_bytes("-1 B"), None);
     assert_eq!(parse_size_to_bytes("-0.01 KiB"), None);
     assert_eq!(parse_size_to_bytes("-500 MiB"), None);
-    assert_eq!(parse_size_to_bytes("-999999999999999999999999999 TiB"), None);
+    assert_eq!(
+        parse_size_to_bytes("-999999999999999999999999999 TiB"),
+        None
+    );
 
     // Overflow / Infinity / NaN
     assert_eq!(parse_size_to_bytes("NaN"), None);
@@ -90,8 +108,14 @@ fn test_stress_parse_size_extreme_and_boundary_bytes() {
 fn test_stress_parse_size_unusual_whitespace_and_nbsp() {
     // Unicode Non-breaking space (U+00A0)
     assert_eq!(parse_size_to_bytes("427.9\u{00A0}MB"), Some(427900000));
-    assert_eq!(parse_size_to_bytes("15.5\u{00a0}MiB"), Some((15.5 * 1048576.0) as u64));
-    assert_eq!(parse_size_to_bytes("\u{00A0}10\u{00A0}KiB\u{00A0}"), Some(10240));
+    assert_eq!(
+        parse_size_to_bytes("15.5\u{00a0}MiB"),
+        Some((15.5 * 1048576.0) as u64)
+    );
+    assert_eq!(
+        parse_size_to_bytes("\u{00A0}10\u{00A0}KiB\u{00A0}"),
+        Some(10240)
+    );
     assert_eq!(parse_size_to_bytes("10\u{00A0}\u{00A0}KiB"), Some(10240));
 
     // Tab characters
@@ -99,7 +123,10 @@ fn test_stress_parse_size_unusual_whitespace_and_nbsp() {
     assert_eq!(parse_size_to_bytes("100\t\t\tMiB"), Some(104857600));
 
     // Newlines and carriage returns
-    assert_eq!(parse_size_to_bytes("\n200\r\nGiB\n"), Some(200 * 1024 * 1024 * 1024));
+    assert_eq!(
+        parse_size_to_bytes("\n200\r\nGiB\n"),
+        Some(200 * 1024 * 1024 * 1024)
+    );
 
     // Mixed spaces, tabs, NBSP
     assert_eq!(parse_size_to_bytes("  50 \t \u{00A0} kB  "), Some(50000));
@@ -177,12 +204,21 @@ fn test_stress_sort_mode_size_desc_all_combinations() {
     assert_eq!(names_and_sizes[8], ("pkg-none-z", None));
 
     // Core rule: all Some(0) must precede all None
-    let first_none_index = packages.iter().position(|p| p.size_bytes.is_none()).unwrap();
+    let first_none_index = packages
+        .iter()
+        .position(|p| p.size_bytes.is_none())
+        .unwrap();
     for (i, p) in packages.iter().enumerate() {
         if i < first_none_index {
-            assert!(p.size_bytes.is_some(), "Package before first None must have Some size");
+            assert!(
+                p.size_bytes.is_some(),
+                "Package before first None must have Some size"
+            );
         } else {
-            assert!(p.size_bytes.is_none(), "Package after first None must have None size");
+            assert!(
+                p.size_bytes.is_none(),
+                "Package after first None must have None size"
+            );
         }
     }
 }
@@ -219,7 +255,11 @@ fn test_stress_sort_mode_large_dataset_invariant() {
     for (idx, p) in packages.iter().enumerate() {
         match p.size_bytes {
             Some(s) => {
-                assert!(!seen_none, "Invariant violated: found Some({}) at index {} after None", s, idx);
+                assert!(
+                    !seen_none,
+                    "Invariant violated: found Some({}) at index {} after None",
+                    s, idx
+                );
                 if let Some(prev) = prev_size {
                     assert!(
                         prev >= s,
@@ -310,7 +350,8 @@ fn test_stress_unified_package_serialization_all_sources() {
             .with_install_date("2026-10-10 23:00:00");
 
         let json = serde_json::to_string(&pkg).expect("serialize to json");
-        let deserialized: UnifiedPackage = serde_json::from_str(&json).expect("deserialize from json");
+        let deserialized: UnifiedPackage =
+            serde_json::from_str(&json).expect("deserialize from json");
 
         assert_eq!(pkg, deserialized);
         assert_eq!(deserialized.source, src);
@@ -347,7 +388,9 @@ fn test_stress_unified_package_serialization_zero_and_none_size() {
 fn test_stress_unified_package_serialization_extreme_values_and_unicode() {
     let pkg = UnifiedPackage::new("unicode-📦", "99.99.99-α", PackageSource::Cargo)
         .with_size(u64::MAX)
-        .with_description("Multi-line description\nWith \"quotes\", tabs\tand emoji: 🚀🔥\u{00A0}non-breaking")
+        .with_description(
+            "Multi-line description\nWith \"quotes\", tabs\tand emoji: 🚀🔥\u{00A0}non-breaking",
+        )
         .with_dependencies(vec!["libstdc++".into(), "glibc>=2.34".into()])
         .with_files(vec!["/path with spaces/file.txt".into()])
         .with_url("https://example.com/?query=1&test=true#frag");
@@ -357,7 +400,10 @@ fn test_stress_unified_package_serialization_extreme_values_and_unicode() {
 
     assert_eq!(pkg, deserialized);
     assert_eq!(deserialized.size_bytes, Some(u64::MAX));
-    assert_eq!(deserialized.description.as_deref().unwrap(), pkg.description.as_deref().unwrap());
+    assert_eq!(
+        deserialized.description.as_deref().unwrap(),
+        pkg.description.as_deref().unwrap()
+    );
 }
 
 #[test]
@@ -396,7 +442,10 @@ fn test_stress_format_bytes() {
     assert_eq!(format_bytes(Some(1024 * 1024)), "1.00 MiB");
     assert_eq!(format_bytes(Some(1024 * 1024 * 1024)), "1.00 GiB");
     assert_eq!(format_bytes(Some(1024 * 1024 * 1024 * 1024)), "1.00 TiB");
-    assert_eq!(format_bytes(Some(10 * 1024 * 1024 * 1024 * 1024)), "10.00 TiB");
+    assert_eq!(
+        format_bytes(Some(10 * 1024 * 1024 * 1024 * 1024)),
+        "10.00 TiB"
+    );
 }
 
 #[test]
@@ -407,7 +456,10 @@ fn test_stress_format_bytes_compact() {
     assert_eq!(format_bytes_compact(Some(1024)), "1.0K");
     assert_eq!(format_bytes_compact(Some(1024 * 1024)), "1.0M");
     assert_eq!(format_bytes_compact(Some(1024 * 1024 * 1024)), "1.0G");
-    assert_eq!(format_bytes_compact(Some(1024 * 1024 * 1024 * 1024)), "1.0T");
+    assert_eq!(
+        format_bytes_compact(Some(1024 * 1024 * 1024 * 1024)),
+        "1.0T"
+    );
 }
 
 #[test]
@@ -428,10 +480,16 @@ fn test_empirical_probe_parse_size_u64_max_plus_one() {
     // u64::MAX is 18446744073709551615
     // 18446744073709551616 is u64::MAX + 1
     let parsed_overflow_raw = parse_size_to_bytes("18446744073709551616");
-    println!("parse_size_to_bytes('18446744073709551616') = {:?}", parsed_overflow_raw);
+    println!(
+        "parse_size_to_bytes('18446744073709551616') = {:?}",
+        parsed_overflow_raw
+    );
 
     let parsed_overflow_unit = parse_size_to_bytes("18446744073709551616 B");
-    println!("parse_size_to_bytes('18446744073709551616 B') = {:?}", parsed_overflow_unit);
+    println!(
+        "parse_size_to_bytes('18446744073709551616 B') = {:?}",
+        parsed_overflow_unit
+    );
 
     let parsed_max = parse_size_to_bytes("18446744073709551615");
     assert_eq!(parsed_max, Some(u64::MAX));
@@ -445,15 +503,24 @@ fn test_empirical_probe_parse_size_no_space_and_special_spaces() {
     // What happens if raw string has no space between number and unit: "100MiB"?
     let no_space = parse_size_to_bytes("100MiB");
     println!("parse_size_to_bytes('100MiB') = {:?}", no_space);
-    assert_eq!(no_space, None, "Expected None for unspaced units like '100MiB'");
+    assert_eq!(
+        no_space, None,
+        "Expected None for unspaced units like '100MiB'"
+    );
 
     // Narrow non-breaking space U+202F
     let narrow_nbsp = parse_size_to_bytes("427.9\u{202F}MB");
-    println!("parse_size_to_bytes('427.9\\u{{202F}}MB') = {:?}", narrow_nbsp);
+    println!(
+        "parse_size_to_bytes('427.9\\u{{202F}}MB') = {:?}",
+        narrow_nbsp
+    );
 
     // Thin space U+2009
     let thin_space = parse_size_to_bytes("427.9\u{2009}MB");
-    println!("parse_size_to_bytes('427.9\\u{{2009}}MB') = {:?}", thin_space);
+    println!(
+        "parse_size_to_bytes('427.9\\u{{2009}}MB') = {:?}",
+        thin_space
+    );
 }
 
 #[test]
@@ -489,7 +556,13 @@ fn test_empirical_probe_unified_package_null_deserialization() {
         "dependencies": null
     }"#;
     let res: Result<UnifiedPackage, _> = serde_json::from_str(null_deps_json);
-    println!("Deserialization with 'dependencies: null' result: {:?}", res);
+    println!(
+        "Deserialization with 'dependencies: null' result: {:?}",
+        res
+    );
     // Serde requires `Vec<String>` to be an array, null is rejected by default unless custom deserializer is used.
-    assert!(res.is_err(), "Standard serde Vec rejects explicit null without custom deserializer");
+    assert!(
+        res.is_err(),
+        "Standard serde Vec rejects explicit null without custom deserializer"
+    );
 }

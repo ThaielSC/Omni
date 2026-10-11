@@ -2,7 +2,6 @@
 //! Self-contained, zero external runtime/dev dependency requirement.
 #![allow(dead_code)]
 
-
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -138,7 +137,8 @@ impl OmniCmd {
 
     /// Provide a custom config path argument `--config <path>`.
     pub fn with_config_file(self, config_path: &Path) -> Self {
-        self.arg("--config").arg(config_path.to_string_lossy().to_string())
+        self.arg("--config")
+            .arg(config_path.to_string_lossy().to_string())
     }
 
     pub fn cwd<P: Into<PathBuf>>(mut self, dir: P) -> Self {
@@ -296,7 +296,9 @@ fn skip_ws<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) {
     }
 }
 
-fn parse_value<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) -> Result<JsonValue, String> {
+fn parse_value<I: Iterator<Item = char>>(
+    chars: &mut std::iter::Peekable<I>,
+) -> Result<JsonValue, String> {
     skip_ws(chars);
     match chars.peek() {
         Some(&'n') => parse_null(chars),
@@ -310,7 +312,9 @@ fn parse_value<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) -> 
     }
 }
 
-fn parse_null<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) -> Result<JsonValue, String> {
+fn parse_null<I: Iterator<Item = char>>(
+    chars: &mut std::iter::Peekable<I>,
+) -> Result<JsonValue, String> {
     let s: String = chars.take(4).collect();
     if s == "null" {
         Ok(JsonValue::Null)
@@ -319,7 +323,9 @@ fn parse_null<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) -> R
     }
 }
 
-fn parse_bool<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) -> Result<JsonValue, String> {
+fn parse_bool<I: Iterator<Item = char>>(
+    chars: &mut std::iter::Peekable<I>,
+) -> Result<JsonValue, String> {
     if chars.peek() == Some(&'t') {
         let s: String = chars.take(4).collect();
         if s == "true" {
@@ -337,7 +343,9 @@ fn parse_bool<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) -> R
     }
 }
 
-fn parse_string<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) -> Result<String, String> {
+fn parse_string<I: Iterator<Item = char>>(
+    chars: &mut std::iter::Peekable<I>,
+) -> Result<String, String> {
     if chars.next() != Some('"') {
         return Err("Expected opening quote for string".to_string());
     }
@@ -378,7 +386,9 @@ fn parse_string<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) ->
     Err("Unclosed string literal".to_string())
 }
 
-fn parse_number<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) -> Result<JsonValue, String> {
+fn parse_number<I: Iterator<Item = char>>(
+    chars: &mut std::iter::Peekable<I>,
+) -> Result<JsonValue, String> {
     let mut num_str = String::new();
     while let Some(&c) = chars.peek() {
         if c == '-' || c == '+' || c == '.' || c == 'e' || c == 'E' || c.is_ascii_digit() {
@@ -393,7 +403,9 @@ fn parse_number<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) ->
         .map_err(|e| format!("Failed to parse number '{}': {}", num_str, e))
 }
 
-fn parse_array<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) -> Result<JsonValue, String> {
+fn parse_array<I: Iterator<Item = char>>(
+    chars: &mut std::iter::Peekable<I>,
+) -> Result<JsonValue, String> {
     chars.next(); // eat '['
     let mut items = Vec::new();
     skip_ws(chars);
@@ -420,7 +432,9 @@ fn parse_array<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) -> 
     }
 }
 
-fn parse_object<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) -> Result<JsonValue, String> {
+fn parse_object<I: Iterator<Item = char>>(
+    chars: &mut std::iter::Peekable<I>,
+) -> Result<JsonValue, String> {
     chars.next(); // eat '{'
     let mut map = HashMap::new();
     skip_ws(chars);
@@ -460,7 +474,9 @@ fn parse_object<I: Iterator<Item = char>>(chars: &mut std::iter::Peekable<I>) ->
 
 /// Validate that a JSON value matches the `UnifiedPackage` contract from PROJECT.md.
 pub fn validate_unified_package_schema(pkg: &JsonValue) -> Result<(), String> {
-    let obj = pkg.as_object().ok_or("UnifiedPackage must be a JSON object")?;
+    let obj = pkg
+        .as_object()
+        .ok_or("UnifiedPackage must be a JSON object")?;
 
     // 1. "name": non-empty String
     let name = obj
@@ -486,15 +502,22 @@ pub fn validate_unified_package_schema(pkg: &JsonValue) -> Result<(), String> {
         .and_then(|v| v.as_str())
         .ok_or("UnifiedPackage 'source' must be a string")?;
     let lower_src = source.to_lowercase();
-    let valid_sources = ["pacman", "aur", "yay", "flatpak", "cargo", "uv", "pip", "python"];
+    let valid_sources = [
+        "pacman", "aur", "yay", "flatpak", "cargo", "uv", "pip", "python",
+    ];
     if !valid_sources.contains(&lower_src.as_str()) {
-        return Err(format!("UnifiedPackage 'source' has unknown value: '{}'", source));
+        return Err(format!(
+            "UnifiedPackage 'source' has unknown value: '{}'",
+            source
+        ));
     }
 
     // 4. "size_bytes": Option<u64> -> integer number or null
     if let Some(size) = obj.get("size_bytes") {
         if !size.is_null() && size.as_u64().is_none() {
-            return Err("UnifiedPackage 'size_bytes' must be a positive integer or null".to_string());
+            return Err(
+                "UnifiedPackage 'size_bytes' must be a positive integer or null".to_string(),
+            );
         }
     }
 
@@ -508,7 +531,9 @@ pub fn validate_unified_package_schema(pkg: &JsonValue) -> Result<(), String> {
     // 6. "dependencies": Vec<String> (optional field in JSON, but if present must be array of strings)
     if let Some(deps) = obj.get("dependencies") {
         if !deps.is_null() {
-            let arr = deps.as_array().ok_or("UnifiedPackage 'dependencies' must be an array")?;
+            let arr = deps
+                .as_array()
+                .ok_or("UnifiedPackage 'dependencies' must be an array")?;
             for item in arr {
                 if item.as_str().is_none() {
                     return Err("UnifiedPackage 'dependencies' items must be strings".to_string());
@@ -520,7 +545,9 @@ pub fn validate_unified_package_schema(pkg: &JsonValue) -> Result<(), String> {
     // 7. "files": Vec<String>
     if let Some(files) = obj.get("files") {
         if !files.is_null() {
-            let arr = files.as_array().ok_or("UnifiedPackage 'files' must be an array")?;
+            let arr = files
+                .as_array()
+                .ok_or("UnifiedPackage 'files' must be an array")?;
             for item in arr {
                 if item.as_str().is_none() {
                     return Err("UnifiedPackage 'files' items must be strings".to_string());
@@ -532,7 +559,9 @@ pub fn validate_unified_package_schema(pkg: &JsonValue) -> Result<(), String> {
     // 8. "binaries": Vec<String>
     if let Some(bins) = obj.get("binaries") {
         if !bins.is_null() {
-            let arr = bins.as_array().ok_or("UnifiedPackage 'binaries' must be an array")?;
+            let arr = bins
+                .as_array()
+                .ok_or("UnifiedPackage 'binaries' must be an array")?;
             for item in arr {
                 if item.as_str().is_none() {
                     return Err("UnifiedPackage 'binaries' items must be strings".to_string());
