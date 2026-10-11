@@ -141,7 +141,7 @@ Pulsa `Space` sobre los paquetes que quieras incluir. La statusline indica cuán
 
 Omni no requiere iniciar toda la aplicación con `sudo`. Si una operación del sistema necesita privilegios, primero se confirma la acción y luego se solicita la contraseña en un prompt enmascarado en la parte inferior. La contraseña se envía por la entrada estándar del proceso y se elimina del búfer de memoria tras el uso. `Esc` cancela el prompt.
 
-La salida del proceso permanece visible en el panel de detalles al terminar. Al salir de ese panel o pulsar `r`, Omni cierra esa salida y actualiza el inventario. Mientras el proceso siga ejecutándose, su salida no se descarta.
+La salida del proceso permanece visible en el panel de detalles al terminar. Omni actualiza el inventario automáticamente al finalizar cada operación, y conserva la salida hasta que salgas de Details. `r` permite solicitar otra recarga manual. Mientras el proceso siga ejecutándose, su salida no se descarta.
 
 Los comandos de gestores personalizados se consideran confiables y pueden ejecutar acciones arbitrarias. Revisa `managers.toml` antes de usarlos.
 
