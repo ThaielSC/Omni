@@ -67,8 +67,8 @@ El usuario gestiona el repositorio con **GitButler** (`but`).
 ┴ 8289bf3 (common base) first commit
 ```
 
-- **Último tag publicado**: `v0.1.0-alpha.2` (backend y CLI de proveedores).
-- **Estado actual**: providers/CLI y primera TUI están registrados en el stack virtual. La desinstalación sigue deshabilitada; cambios locales restantes están en `src/utils/format.rs` y `tests/m1_challenger_test.rs` y deben revisarse antes de asignarlos.
+- **Último tag publicado**: `v0.1.0-beta.1` (TUI interactiva M3).
+- **Estado actual**: providers/CLI y TUI están en el stack virtual. En el workspace hay una implementación aún sin commit para navegar dependencias por paquete y desinstalar con confirmación y consola de salida. Hay también cambios de hardening M1 y documentación que deben asignarse a sus ramas adecuadas.
 
 ---
 
@@ -88,14 +88,15 @@ El usuario gestiona el repositorio con **GitButler** (`but`).
 - **Milestone 1 — Core/config**: modelos, configuración TOML, formato de tamaños y fixtures de tests.
 - **Milestone 2 — Providers/CLI**: pacman, AUR, Flatpak, Cargo, uv, pip y managers personalizados; CLI de texto/JSON.
 - **Milestone 3 — Primera TUI**: `src/ui/` ofrece tres paneles, navegación Vim, búsqueda, ordenamiento, detalles, recarga, ayuda `?` y statusline. El arranque sin flags abre la TUI; `--list` mantiene el modo CLI.
+- **Dependencias interactivas**: `i` abre una lista inferior de dependencias disponibles del paquete; `j/k` selecciona y Details muestra el paquete elegido. El mapeo es mejor cuando el proveedor expone metadatos de dependencias (por ahora, Pacman).
+- **Desinstalación**: `d/x` prepara el comando de proveedor, presenta confirmación y transmite stdout/stderr al panel Details; al finalizar correctamente actualiza el inventario. Los comandos usan argv para proveedores nativos y escape POSIX de valores para gestores configurables. Las operaciones privilegiadas son no interactivas: ejecutar `sudo -v` antes de iniciar Omni si el helper es sudo.
 - **Filtro de dependencias**: `e` alterna `DEPS OFF/ON`; por defecto se ocultan solo dependencias detectadas con fiabilidad. Los paquetes `Unknown` se conservan.
 - **Decoración visual**: `border_style` admite `none`, `vertical`, `rounded`, `plain`, `thick` y `double`; el tema Gruvbox separa paneles por fondo con `none` como valor por defecto.
 
 ### ⏳ Trabajo pendiente para una beta sólida
 
-- La desinstalación todavía no está conectada: `d` / `x` muestra un aviso y no modifica el sistema.
-- Revisar casos de terminal estrecha, mensajes de error por proveedor y accesibilidad de los paquetes sin metadatos.
-- Actualizar pruebas y documentación según avance la interfaz. No etiquetar una nueva versión hasta cerrar los criterios de [`docs/VERSIONING.md`](docs/VERSIONING.md).
+- Revisar manualmente la TUI en terminales estrechas y confirmar cada proveedor real de desinstalación en una máquina de prueba; la suite automatizada verifica construcción segura de comandos, no ejecuta desinstalaciones reales.
+- Antes de publicar `v0.1.0-rc.1`, cerrar los criterios de aceptación/auditoría de [`docs/VERSIONING.md`](docs/VERSIONING.md), alinear versión en Cargo.toml/Cargo.lock y crear tag anotado. `but` no tiene subcomando de tags; usar GitButler Desktop o el mecanismo de tags documentado autorizado.
 
 ---
 
