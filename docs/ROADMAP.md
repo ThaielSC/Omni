@@ -37,7 +37,7 @@ Omni is a Rust package inventory and management TUI that unifies system and lang
 - [x] Persist user-visible notices and operation summaries in a private, rotating log; expose `omni --logs` and `omni --log-path`.
 - [x] Document actual metadata coverage and known limitations for every built-in, custom, and project-local provider in [`PROVIDER_SUPPORT.md`](PROVIDER_SUPPORT.md). A read-only smoke check on the current Arch host confirmed installed inventories for Pacman, AUR, Flatpak, Cargo, uv, and pip; it does not substitute for mutation tests.
 - [ ] Manually exercise every manager and privilege-helper path in a disposable environment. Uninstall/refresh passed for all six built-in global providers; global updates for Pacman, Flatpak, Cargo, uv, and pip and Cargo, npm, and Bun project add/remove/update passed. Remaining: a real yay/AUR build and real sudo authentication. The Pacman private-root update used a fixture helper for the password prompt, not actual credentials. See [`PROVIDER_SUPPORT.md`](PROVIDER_SUPPORT.md).
-- [ ] Complete remaining release gates in [`VERSIONING.md`](VERSIONING.md). The source-level command review and current dependency advisory scan are documented in [`SECURITY_REVIEW.md`](SECURITY_REVIEW.md); live-manager and TUI acceptance checks remain.
+- [ ] Complete remaining release gates in [`VERSIONING.md`](VERSIONING.md). Source-level command review, 2026-10-11 dependency advisory scan, and TUI acceptance review are documented in [`SECURITY_REVIEW.md`](SECURITY_REVIEW.md) and [`VERSIONING.md`](VERSIONING.md); a real yay/AUR update build and real sudo authentication remain.
 
 ## Post-1.0 / optional follow-up
 

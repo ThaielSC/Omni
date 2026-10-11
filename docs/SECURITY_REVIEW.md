@@ -1,7 +1,7 @@
 # Security review
 
-Review date: 2026-10-10  
-Reviewed revision: `feat/updates` after the package-operation refresh fix.
+Review date: 2026-10-11  
+Reviewed revision: `feat/updates` after package-update fixes and compact TUI review.
 
 ## Command execution review
 
@@ -14,10 +14,10 @@ Reviewed revision: `feat/updates` after the package-operation refresh fix.
 
 ## Dependency audit
 
-- `cargo-audit 0.22.2 audit --no-fetch --format json` scanned the lockfile on 2026-10-10 against the local RustSec advisory database: **217 locked crate dependencies, 0 known vulnerabilities, 0 warnings**.
+- `cargo audit` (cargo-audit 0.22.2) fetched the current RustSec advisory database and scanned `Cargo.lock` on 2026-10-11: **217 locked crate dependencies, 0 known vulnerabilities, 0 warnings** (exit status 0).
 - An OSV batch query of the registry package versions also returned zero findings. Advisory databases change; rerun `cargo audit` before each release.
 - `tokio` and `async-trait` were removed from direct dependencies because the current implementation uses standard-library threads and does not reference either crate. `cargo check` confirmed the reduced dependency graph builds.
 
 ## Remaining release verification
 
-This review is a source/dependency audit, not proof that every manager behaves correctly on every host. Before a stable release, finish the disposable-environment checks in [`VERSIONING.md`](VERSIONING.md), especially real update/uninstall flows for system managers, sudo cancellation, Flatpak scope, and interactive/narrow-terminal review. Never test destructive operations against the user's live package database.
+This review is a source/dependency audit, not proof that every manager behaves correctly on every host. Before a stable release, finish the disposable-environment checks in [`VERSIONING.md`](VERSIONING.md), especially a real yay/AUR update build and real sudo authentication. Never test destructive operations against the user's live package database.
