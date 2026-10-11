@@ -24,6 +24,17 @@ tar -xzf omni-1.0.0-x86_64-unknown-linux-gnu.tar.gz
 
 El binario GNU/Linux se construye en Ubuntu 22.04 para mantener compatibilidad con sistemas que ofrecen una versión de glibc igual o posterior. Los gestores de paquetes que quieras consultar deben estar instalados por separado y disponibles en `PATH`.
 
+## Instalar desde el código con Cargo
+
+Si ya tienes una copia local del repositorio y Rust/Cargo instalados, puedes instalar el ejecutable directamente desde su `Cargo.toml`:
+
+```sh
+cd Omni
+cargo install --path . --locked
+```
+
+Cargo compila el paquete local y coloca `omni` en el directorio de instalación configurado, normalmente `~/.cargo/bin`. Para actualizarlo desde otra revisión local, repite el comando con `--force`. Esto no publica el proyecto en crates.io ni instala dependencias del sistema.
+
 ## Otros formatos posibles
 
 La release 1.0.0 no genera paquetes nativos adicionales:
@@ -31,6 +42,6 @@ La release 1.0.0 no genera paquetes nativos adicionales:
 - **Arch Linux:** se puede añadir un `PKGBUILD` para publicar en AUR o construir un paquete `.pkg.tar.zst`.
 - **Debian/Ubuntu:** se puede añadir un paquete `.deb`.
 - **Fedora/RHEL/openSUSE:** se puede añadir un paquete `.rpm`.
-- **Crates.io:** permitiría instalar Omni con Cargo, pero requiere mantener y publicar el crate en ese registro.
+- **Crates.io:** no es necesario para la instalación con `cargo install --path`; publicar allí sería una opción aparte para quien quiera instalar por nombre desde el registro.
 
 Estos formatos requieren sus propios metadatos, pruebas de instalación/desinstalación y mantenimiento de publicación. El AppImage y el tarball ofrecen una primera descarga Linux sencilla sin fingir que ya existe integración con esos repositorios.
