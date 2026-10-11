@@ -34,7 +34,8 @@ struct ManagerPackages {
 }
 
 /// Query project-local managers for newer versions while keeping manifests and
-/// lockfiles untouched. Cargo uses `--dry-run`; npm's `outdated` and Bun's
+/// lockfiles untouched. Cargo uses a whole-lockfile `--dry-run` and retains only
+/// direct dependencies in the result; npm's `outdated` and Bun's
 /// `outdated` commands are documented read-only queries.
 pub fn check_project_updates(
     packages: &[UnifiedPackage],
@@ -115,9 +116,6 @@ fn query_cargo(manager: &ManagerPackages, binary: &str) -> Result<HashMap<String
         .arg("--dry-run")
         .arg("--manifest-path")
         .arg(manager.root.join("Cargo.toml"));
-    for name in &manager.names {
-        command.arg("-p").arg(name);
-    }
     command.env("NO_COLOR", "1");
     let output = command
         .output()
@@ -351,6 +349,40 @@ mod tests {
         let updates = parse_cargo_dry_run(output, &names(&["serde"]));
         assert_eq!(updates.get("serde").map(String::as_str), Some("1.0.2"));
         assert_eq!(updates.len(), 1);
+    }
+
+    #[test]
+    fn cargo_update_query_avoids_ambiguous_package_name_filters() {
+        let temp = std::env::temp_dir().join(format!(
+            "omni-cargo-update-test-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&temp).unwrap();
+        let project = temp.join("project");
+        fs::create_dir_all(&project).unwrap();
+        let binary = temp.join("cargo-test");
+        fs::write(
+            &binary,
+            "#!/bin/sh\nfor arg in \"$@\"; do [ \"$arg\" != \"-p\" ] || exit 42; done\nprintf '%s\\n' 'Updating thiserror v2.0.0 -> v2.0.1' 'Updating transitive v1.0.0 -> v1.0.1'\n",
+        )
+        .unwrap();
+        let mut permissions = fs::metadata(&binary).unwrap().permissions();
+        permissions.set_mode(0o755);
+        fs::set_permissions(&binary, permissions).unwrap();
+        let manager = ManagerPackages {
+            ecosystem: "cargo".into(),
+            root: project,
+            names: names(&["thiserror"]),
+        };
+
+        let updates = query_cargo(&manager, binary.to_str().unwrap()).unwrap();
+        assert_eq!(updates.get("thiserror").map(String::as_str), Some("2.0.1"));
+        assert_eq!(updates.len(), 1);
+        fs::remove_dir_all(temp).unwrap();
     }
 
     #[test]

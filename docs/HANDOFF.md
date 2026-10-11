@@ -53,7 +53,14 @@ El usuario gestiona el repositorio con **GitButler** (`but`).
 
 ### Ramas Virtuales Apiladas (Stack de trabajo en GitButler):
 ```text
-╭┄ at [feat/uninstall]             <-- (Dependencias + desinstalación segura)
+╭┄ at [feat/updates]               <-- (Updates + logging persistente)
+┊●   feat(logging): persist notices and expose recent logs
+┊●   feat(updates): add native, project, and custom manager update flows
+┊│
+┊├┄ at [feat/project-managers]      <-- (Dependencias de proyectos)
+┊●   feat(projects): manage Cargo/npm/Bun dependencies and show updates
+┊│
+┊├┄ at [feat/uninstall]             <-- (Dependencias + desinstalación segura)
 ┊●   feat(uninstall): manage packages and dependencies from the TUI
 ┊│
 ┊├┄ at [feat/tui]                   <-- (TUI + personalización visual)
@@ -71,8 +78,9 @@ El usuario gestiona el repositorio con **GitButler** (`but`).
 ┴ 8289bf3 (common base) first commit
 ```
 
-- **Último tag publicado**: `v0.1.0-beta.1` (TUI interactiva M3).
-- **Estado actual**: providers/CLI, TUI y la gestión de dependencias/desinstalación están en el stack virtual y publicados en PRs encadenadas. Quedan en el workspace únicamente cambios M1 de hardening (`src/utils/format.rs`, `tests/m1_challenger_test.rs`) que no se mezclaron en la PR de gestión.
+- **Último tag publicado**: `v0.1.0-beta.1` (TUI interactiva M3). No se creó el tag `v0.1.0-rc.1`: siguen pendientes las revisiones manuales y de seguridad de [`docs/VERSIONING.md`](VERSIONING.md).
+- **Estado actual**: providers/CLI, TUI, desinstalación, gestores de proyectos, updates y logging están en el stack virtual y publicados como PRs encadenadas (`#1` a `#9`). La PR #9 debe pasar CI y continúa en borrador hasta completar su revisión.
+- **Cambios M1 sin commitear**: `src/utils/format.rs`, `tests/common/mod.rs`, `tests/config_test.rs`, `tests/e2e_cli_test.rs`, `tests/m1_challenger_test.rs` y `tests/m1_stress_test.rs`; no agregarlos a una PR de feature sin revisar su procedencia.
 
 ---
 
@@ -101,6 +109,7 @@ El usuario gestiona el repositorio con **GitButler** (`but`).
 - **Filtro de dependencias**: `e` alterna `DEPS OFF/ON`; por defecto se ocultan solo dependencias detectadas con fiabilidad. Los paquetes `Unknown` se conservan.
 - **Gestores de proyectos**: `[manager.projects]` en `config.toml` controla la integración local. Cargo, npm y Bun están habilitados por defecto y pueden desactivarse globalmente (`enabled = false`) o uno a uno (`cargo`, `npm`, `bun`). La categoría del proyecto usa `<folder>[Cargo]`, `<folder>[npm]` o `<folder>[bun]`. Agregar una dependencia requiere acción explícita en esa categoría y usa `cargo add <name>`, `npm install <name>` o `bun add <name>` desde la raíz del proyecto; los argumentos se pasan sin shell y la salida se presenta en Details. Omni no instala dependencias automáticamente al iniciar. Estos gestores operan como usuario normal y mantienen el manifiesto/lockfile según sus propias reglas.
 - **Decoración visual**: `border_style` admite `none`, `vertical`, `rounded`, `plain`, `thick` y `double`; el tema Gruvbox separa paneles por fondo con `none` como valor por defecto.
+- **Logs persistentes**: avisos temporales de statusline y resultados de operaciones se guardan en `${XDG_STATE_HOME}/omni/omni.log` o `~/.local/state/omni/omni.log`. `omni --logs` muestra las últimas 500 líneas y `omni --log-path` imprime la ruta. El log rota al superar 1 MiB; no registra la salida íntegra de procesos ni la contraseña sudo.
 
 ### ⏳ Gates pendientes antes de publicar estable
 
