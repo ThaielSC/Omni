@@ -245,11 +245,18 @@ pub fn parse_flatpak_updates(
             continue;
         }
         let fields: Vec<_> = line.split('\t').collect();
-        if fields.len() != 2 || fields[0].trim().is_empty() || fields[1].trim().is_empty() {
+        if !(1..=2).contains(&fields.len()) || fields[0].trim().is_empty() {
             return Err(format!("invalid Flatpak update row {}", line_number + 1));
         }
         let name = fields[0].trim();
-        let latest = fields[1].trim();
+        // Flatpak may omit an app version entirely, in which case its CLI
+        // emits only the application ID despite requesting both columns.
+        // The update itself is still actionable by app ID.
+        let latest = fields
+            .get(1)
+            .map(|version| version.trim())
+            .filter(|version| !version.is_empty())
+            .unwrap_or("version unknown");
         if let Some(current) = installed.get(&canonical_name(name)) {
             updates.push(AvailableUpdate {
                 manager: UpdateManager::Flatpak,
@@ -455,8 +462,18 @@ mod tests {
     }
 
     #[test]
+    fn recognizes_flatpak_update_when_remote_omits_app_version() {
+        let installed = [package("org.omni.TestUpdate", "", PackageSource::Flatpak)];
+        let updates = parse_flatpak_updates("org.omni.TestUpdate\n", &installed).unwrap();
+        assert_eq!(updates.len(), 1);
+        assert_eq!(updates[0].package_name, "org.omni.TestUpdate");
+        assert_eq!(updates[0].latest_version, "version unknown");
+    }
+
+    #[test]
     fn rejects_malformed_flatpak_rows() {
-        assert!(parse_flatpak_updates("org.example.App\n", &[]).is_err());
+        assert!(parse_flatpak_updates("\t1.2\n", &[]).is_err());
+        assert!(parse_flatpak_updates("app\t1.2\textra\n", &[]).is_err());
     }
 
     #[test]
