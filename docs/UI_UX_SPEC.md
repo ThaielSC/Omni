@@ -175,6 +175,8 @@ Al presionar `?` en cualquier momento, se suspende la vista y aparece una ventan
 | **Status Bar ` DEL? `** | Fondo `#ea6962` (Rojo), texto `#282828` | Alerta de desinstalación |
 # Dependencias y operaciones de paquete
 
+- La carga inicial y las recargas no cubren los paneles con un modal: un spinner discreto aparece junto al modo en la status bar. Los errores de lectura de gestores y configuración se presentan como notificaciones temporales en esa misma barra, dejando los paneles disponibles para inventario, detalles y vistas solicitadas.
+
 - `i` abre una sublista inferior de dependencias del paquete actual. `j/k` navega por esa sublista; el panel Details presenta los datos del paquete de dependencia cuando está presente en el inventario. Si el proveedor no publica dependencias, Omni lo indica sin inventar datos.
 - `d/x` sobre un paquete o dependencia abre una confirmación con el nombre, origen y comando exacto. Al aceptar, Details se convierte temporalmente en consola; stdout y stderr aparecen en vivo. `j/k`, `g/G` permiten revisar el log y `Esc` lo cierra después de finalizar.
 - Al terminar correctamente, Omni vuelve a consultar el inventario. Si la operación usa `sudo`, al confirmar aparece un prompt de contraseña enmascarada en la fila inferior, con Enter para continuar y Esc para cancelar. Omni transmite la contraseña a `sudo -S` únicamente por stdin, la borra del buffer en memoria con `zeroize` y no la muestra en el comando ni en los logs. La TUI y la consulta de paquetes se ejecutan como usuario normal.
