@@ -78,7 +78,7 @@ El usuario gestiona el repositorio con **GitButler** (`but`).
 ┴ 8289bf3 (common base) first commit
 ```
 
-- **Último tag publicado**: `v0.1.0-beta.1` (TUI interactiva M3). No se creó el tag `v0.1.0-rc.1`: siguen pendientes las revisiones manuales y de seguridad de [`docs/VERSIONING.md`](VERSIONING.md).
+- **Último tag publicado**: `v0.1.0-beta.1` (TUI interactiva M3). El prompt real de sudo se verificó el 2026-10-11 con un comando inocuo; aún no se ha creado `v0.1.0-rc.1` ni `v1.0.0` porque faltan los gates finales de publicación descritos en [`docs/VERSIONING.md`](VERSIONING.md).
 - **Estado actual**: providers/CLI, TUI, desinstalación, gestores de proyectos, updates y logging están en el stack virtual y publicados como PRs encadenadas (`#1` a `#9`). La PR #9 debe pasar CI y continúa en borrador hasta completar su revisión.
 - **Cambios M1 sin commitear**: `src/utils/format.rs`, `tests/common/mod.rs`, `tests/config_test.rs`, `tests/e2e_cli_test.rs`, `tests/m1_challenger_test.rs` y `tests/m1_stress_test.rs`; no agregarlos a una PR de feature sin revisar su procedencia.
 
@@ -114,8 +114,8 @@ El usuario gestiona el repositorio con **GitButler** (`but`).
 
 ### ⏳ Gates pendientes antes de publicar estable
 
-- Revisar manualmente la TUI en terminales estrechas y confirmar cada proveedor real de desinstalación en una máquina de prueba; la suite automatizada verifica construcción segura de comandos, no ejecuta desinstalaciones reales.
-- Antes de publicar `v0.1.0-rc.1`, cerrar los criterios de aceptación/auditoría de [`docs/VERSIONING.md`](docs/VERSIONING.md), alinear versión en Cargo.toml/Cargo.lock y crear tag anotado. `but` no tiene subcomando de tags; usar GitButler Desktop o el mecanismo de tags documentado autorizado.
+- Las pruebas manuales documentadas cubren operaciones en entornos descartables y el prompt real de sudo con `sudo ... sh -c true`. No se ejecutó una desinstalación privilegiada real contra la base Pacman de uso diario.
+- Antes de publicar `v1.0.0`, repetir CI, el escaneo RustSec y la revisión final de limitaciones sobre el commit candidato; actualizar `Cargo.toml`, `Cargo.lock`, README y notas de release; después crear el tag anotado en el commit aprobado. `but` no tiene subcomando de tags; usar GitButler Desktop o el mecanismo documentado.
 
 ---
 

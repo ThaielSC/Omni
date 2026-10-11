@@ -18,6 +18,8 @@ Reviewed revision: `feat/updates` after package-update fixes and compact TUI rev
 - An OSV batch query of the registry package versions also returned zero findings. Advisory databases change; rerun `cargo audit` before each release.
 - `tokio` and `async-trait` were removed from direct dependencies because the current implementation uses standard-library threads and does not reference either crate. `cargo check` confirmed the reduced dependency graph builds.
 
-## Remaining release verification
+## Manual authentication verification
 
-This review is a source/dependency audit, not proof that every manager behaves correctly on every host. Before a stable release, finish the remaining authentication check in [`VERSIONING.md`](VERSIONING.md): validate Omni's sudo prompt with real host credentials. The AUR build/update has been exercised against a private Pacman root under a user namespace. Never test destructive operations against the user's live package database.
+On 2026-10-11, the actual Omni TUI prompt was exercised with host sudo credentials through an isolated temporary custom manager. The selected fake package ran `sudo -n sh -c true`; Omni displayed the operation as successful in Details. The command is harmless and changed no packages. This verifies the real sudo authentication path and host policy for this command, but does not claim a real privileged Pacman removal. Disposable package-operation tests and the private-root AUR build/update are recorded in [`PROVIDER_SUPPORT.md`](PROVIDER_SUPPORT.md).
+
+This review is still a source/dependency audit, not proof that every manager behaves identically on every host. Repeat CI, dependency advisories, and a final limitation review against the release candidate. Never test destructive operations against the user's live package database.
