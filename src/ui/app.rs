@@ -480,8 +480,6 @@ impl ConfigFiles {
             } else {
                 config.custom_managers = managers;
             }
-        } else if !self.managers_overlay {
-            config.custom_managers.clear();
         }
         Ok(config)
     }
@@ -491,6 +489,7 @@ struct ConfigWatcher {
     files: ConfigFiles,
     fingerprints: Vec<Option<FileFingerprint>>,
     last_check: Instant,
+    pending_managers_reload: bool,
 }
 
 impl ConfigWatcher {
@@ -504,6 +503,7 @@ impl ConfigWatcher {
             files,
             fingerprints,
             last_check: Instant::now(),
+            pending_managers_reload: false,
         }
     }
 
@@ -523,12 +523,20 @@ impl ConfigWatcher {
             if current != self.fingerprints[index] {
                 changed = true;
                 if self.files.managers.as_ref() == Some(path) {
-                    managers_changed = true;
+                    self.pending_managers_reload = true;
                 }
                 self.fingerprints[index] = current;
             }
         }
-        changed.then(|| self.files.load().map(|config| (config, managers_changed)))
+        if !changed {
+            return None;
+        }
+        let result = self.files.load().map(|config| {
+            managers_changed = self.pending_managers_reload;
+            self.pending_managers_reload = false;
+            (config, managers_changed)
+        });
+        Some(result)
     }
 }
 
