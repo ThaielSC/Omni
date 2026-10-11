@@ -1697,7 +1697,8 @@ fn render_managers(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
                         Style::default()
                     },
                 ),
-                Span::raw(format!(" {:<9} {:>5}", tab.display_name(), counts[index])),
+                // Keep the package-count column aligned with project managers below.
+                Span::raw(format!(" {:<15} {:>5}", tab.display_name(), counts[index])),
             ];
             if update_counts[index] > 0 {
                 spans.push(Span::raw(" "));
