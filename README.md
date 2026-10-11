@@ -1,7 +1,7 @@
 # Omni (`omni`)
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](#)
-[![Version](https://img.shields.io/badge/version-v0.1.0--alpha.1-orange)](#)
+[![Version](https://img.shields.io/badge/version-v0.1.0--alpha.2-orange)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Theme: Gruvbox Material](https://img.shields.io/badge/theme-Gruvbox%20Material-yellow)](#)
 
@@ -18,12 +18,13 @@ Inspirado en la filosofía y ergonomía de **Helix, Vim y Yazi**: diseño minima
 - 🧘 **Filosofía Helix / Vim**:
   - Navegación espacial limpia mediante `h / j / k / l`.
   - Cero ruido visual en pantalla (sin indicadores fijos molestos).
-  - Statusline inferior con indicador modal (`NOR`, `/SEARCH`, `DEL?`).
+  - Statusline inferior con indicador modal, contexto, posición y estado de dependencias.
   - Overlay de ayuda flotante activable con `?` y descartable con `Esc` o `q`.
 - 📊 **Auditoría de Espacio**: Ordenamiento instantáneo por tamaño (`Size ▼`) con alertas visuales por rangos de peso para identificar qué aplicaciones consumen más disco.
 - 🎨 **Tema Gruvbox Material**: Paleta cálida, limpia y consistente con entornos de terminal modernos.
-- 🛡️ **Desinstalación Segura**: Ventana modal de confirmación previa a cualquier acción destructiva, mostrando el comando exacto y los bytes a liberar.
-- ⚡ **Rendimiento Asíncrono**: Motor reactivo con Tokio y Ratatui; la interfaz abre de inmediato mientras los paquetes cargan en segundo plano sin congelar la UI.
+- 🧹 **Vista enfocada**: Oculta por defecto las dependencias que el gestor identifica como tales; `e` permite incluirlas. Los elementos sin clasificación siguen visibles.
+- 🛡️ **Acciones seguras**: La desinstalación aún no está habilitada en esta alpha; `d` / `x` informa que no se realizó ningún cambio.
+- ⚡ **Carga en segundo plano**: Los inventarios se leen fuera del bucle de eventos para mantener la navegación fluida.
 
 ---
 
@@ -46,7 +47,7 @@ Inspirado en la filosofía y ergonomía de **Helix, Vim y Yazi**: diseño minima
 │              │                               │                                                        │
 │              │                               │ Dependencies: glibc, pcre2                             │
 └──────────────┴───────────────────────────────┴────────────────────────────────────────────────────────┘
- NOR  [All] 1/1420                                                          Size: 14.8 GiB  utf-8  100% 
+ NOR  [All] 1/1420 DEPS OFF                                                Size: 14.8 GiB  utf-8
 ```
 
 ---
@@ -61,10 +62,11 @@ Inspirado en la filosofía y ergonomía de **Helix, Vim y Yazi**: diseño minima
 | **`1` .. `6`** | Saltar directamente a un gestor de paquetes (`1`: All, `2`: Pacman, etc.) |
 | **`/`** | Activar la búsqueda interactiva (fuzzy search) |
 | **`s`** | Alternar ordenación: Tamaño descendente (`Size ▼`) ↔ Nombre (`Name ▲`) |
-| **`d`** o **`x`** | Desinstalar paquete seleccionado (abre modal de confirmación) |
+| **`e`** | Alternar entre ocultar (`DEPS OFF`) e incluir (`DEPS ON`) dependencias detectadas |
+| **`d`** o **`x`** | Informa que la desinstalación todavía no está disponible en esta alpha |
 | **`r`** | Recargar / reescanear paquetes en segundo plano |
 | **`?`** | Mostrar / ocultar ventana flotante de ayuda |
-| **`q`** o **`<Esc>`** | Salir de la aplicación |
+| **`q`** o **`Ctrl-C`** | Salir de la aplicación |
 
 ---
 
@@ -76,11 +78,11 @@ Omni es 100% personalizable a través de archivos TOML en `~/.config/omni/`:
   ```toml
   [layout]
   ratio = [ 1, 2, 3 ]          # Proporción de ancho de las 3 columnas
-  border_style = "rounded"     # "rounded", "plain", "double", "none"
+  border_style = "none"        # also: "vertical", "rounded", "plain", "thick", "double"
   show_managers = true
   show_details = true
   ```
-- **Temas y Colores (`theme.toml`)**: Permite ajustar bordes, colores de selección, badges de gestores y los bloques invertidos de la statusline Helix (`NOR`, `/SEARCH`, `DEL?`).
+- **Temas y Colores (`theme.toml`)**: Permite ajustar colores de selección, badges, statusline y fondos por panel (`panel_managers_bg`, `panel_packages_bg`, `panel_details_bg`).
 - **Atajos (`keymap.toml`)**: Reasignación completa de teclas de navegación y acciones.
 - **Gestores Personalizados (`managers.toml`)**: Define nuevos gestores con `list_cmd`, `format` (regex o json) y `uninstall_cmd`.
 
