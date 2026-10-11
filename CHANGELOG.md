@@ -2,9 +2,13 @@
 
 This file records notable changes to Omni. Versions follow [Semantic Versioning](docs/VERSIONING.md).
 
-## [1.0.0] - Unreleased
+## [Unreleased]
 
-Candidate for the first stable release; it will be published with the `v1.0.0` tag.
+### Fixed
+
+- Show project package updates in the corresponding project manager row.
+
+## [1.0.0] - 2026-10-11
 
 ### Added
 
