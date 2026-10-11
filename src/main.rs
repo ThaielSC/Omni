@@ -5,6 +5,7 @@ use omni::provider::{
     PackageManagerProvider, cargo::CargoProvider, custom::CustomManager, flatpak::FlatpakProvider,
     pacman::PacmanProvider, pip::PipProvider, uv::UvProvider, yay::YayProvider,
 };
+use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
@@ -107,31 +108,54 @@ fn execute() -> Result<(), String> {
                 .then_with(|| a.source.name().cmp(b.source.name()))
         });
     }
+    let mut output = String::new();
     if args.json {
-        println!(
-            "{}",
-            serde_json::to_string(&packages).map_err(|e| e.to_string())?
-        );
+        output.push_str(&serde_json::to_string(&packages).map_err(|e| e.to_string())?);
+        output.push('\n');
     } else {
         if packages.is_empty() {
-            println!("No packages found.");
+            output.push_str("No packages found.\n");
         } else {
-            println!(
+            output.push_str(&format!(
                 "{:<32} {:<18} {:<10} {:>12}",
                 "NAME", "VERSION", "SOURCE", "SIZE"
-            );
+            ));
+            output.push('\n');
             for p in packages {
-                println!(
+                output.push_str(&format!(
                     "{:<32} {:<18} {:<10} {:>12}",
                     p.name,
                     p.version,
                     p.source.name(),
                     omni::utils::format::format_bytes(p.size_bytes)
-                );
+                ));
+                output.push('\n');
             }
         }
     }
-    Ok(())
+    write_stdout(&output).map_err(|error| format!("could not write output: {error}"))
+}
+
+fn write_stdout(output: &str) -> std::io::Result<()> {
+    handle_stdout_result(std::io::stdout().lock().write_all(output.as_bytes()))
+}
+
+fn handle_stdout_result(result: std::io::Result<()>) -> std::io::Result<()> {
+    match result {
+        Err(error) if error.kind() == std::io::ErrorKind::BrokenPipe => Ok(()),
+        result => result,
+    }
+}
+
+#[cfg(test)]
+mod output_tests {
+    use super::*;
+
+    #[test]
+    fn treats_closed_output_pipe_as_normal_termination() {
+        let error = std::io::Error::from(std::io::ErrorKind::BrokenPipe);
+        assert!(handle_stdout_result(Err(error)).is_ok());
+    }
 }
 fn manager_matches(filter: &str, id: &str) -> bool {
     match filter {
