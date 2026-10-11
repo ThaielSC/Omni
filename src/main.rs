@@ -53,7 +53,8 @@ fn execute() -> Result<(), String> {
     // the interactive inventory the default invocation.
     let list_mode = args.list || args.json || args.manager.is_some() || args.sort.is_some();
     if !list_mode {
-        return omni::ui::run(config).map_err(|error| error.to_string());
+        return omni::ui::run_with_config_path(config, args.config.clone())
+            .map_err(|error| error.to_string());
     }
 
     let mut providers: Vec<Box<dyn PackageManagerProvider>> = vec![
