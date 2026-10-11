@@ -1,4 +1,4 @@
-use std::io::{self, Stdout};
+use std::io::{self, BufRead, BufReader, Stdout};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
@@ -24,8 +24,9 @@ use crate::config::{
 };
 use crate::model::{FilterTab, InstallReason, SortMode, UnifiedPackage};
 use crate::provider::{
-    PackageManagerProvider, cargo::CargoProvider, custom::CustomManager, flatpak::FlatpakProvider,
-    pacman::PacmanProvider, pip::PipProvider, uv::UvProvider, yay::YayProvider,
+    PackageManagerProvider, build_uninstall_command, cargo::CargoProvider, custom::CustomManager,
+    flatpak::FlatpakProvider, pacman::PacmanProvider, pip::PipProvider, uv::UvProvider,
+    yay::YayProvider,
 };
 use crate::utils::format::format_bytes;
 
@@ -35,13 +36,29 @@ use super::{help, layout, statusline};
 enum Focus {
     Managers,
     Packages,
+    PackageDependencies,
     Details,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Overlay {
     Help,
-    Unavailable,
+    ConfirmUninstall,
+}
+
+#[derive(Debug)]
+enum UiEvent {
+    Packages(Vec<UnifiedPackage>),
+    UninstallOutput(String),
+    UninstallFinished(Option<i32>),
+}
+
+#[derive(Debug, Clone)]
+struct UninstallConsole {
+    package: String,
+    lines: Vec<String>,
+    running: bool,
+    exit_code: Option<i32>,
 }
 
 struct App {
@@ -63,11 +80,17 @@ struct App {
     loading: bool,
     reload_after_loading: bool,
     notice: Option<(String, Instant)>,
-    reload_tx: Sender<Vec<UnifiedPackage>>,
+    reload_tx: Sender<UiEvent>,
+    show_package_dependencies: bool,
+    dependency_index: usize,
+    uninstall_target: Option<UnifiedPackage>,
+    uninstall_command: Option<crate::provider::UninstallCommand>,
+    uninstall_console: Option<UninstallConsole>,
+    console_scroll: usize,
 }
 
 impl App {
-    fn new(config: OmniConfig, reload_tx: Sender<Vec<UnifiedPackage>>) -> Self {
+    fn new(config: OmniConfig, reload_tx: Sender<UiEvent>) -> Self {
         Self {
             config,
             packages: Vec::new(),
@@ -88,6 +111,12 @@ impl App {
             reload_after_loading: false,
             notice: None,
             reload_tx,
+            show_package_dependencies: false,
+            dependency_index: 0,
+            uninstall_target: None,
+            uninstall_command: None,
+            uninstall_console: None,
+            console_scroll: 0,
         }
     }
 
@@ -123,6 +152,35 @@ impl App {
         self.filtered
             .get(self.package_index)
             .and_then(|index| self.packages.get(*index))
+    }
+
+    fn selected_dependency_name(&self) -> Option<&str> {
+        self.selected_package()?
+            .dependencies
+            .get(self.dependency_index)
+            .map(String::as_str)
+    }
+
+    fn selected_dependency_package(&self) -> Option<&UnifiedPackage> {
+        let parent = self.selected_package()?;
+        let name = dependency_package_name(self.selected_dependency_name()?);
+        self.packages.iter().find(|package| {
+            package.name == name
+                && package.source == parent.source
+                && package.manager_id == parent.manager_id
+        })
+    }
+
+    fn selected_detail_package(&self) -> Option<&UnifiedPackage> {
+        if self.show_package_dependencies
+            && self
+                .selected_package()
+                .is_some_and(|p| !p.dependencies.is_empty())
+        {
+            self.selected_dependency_package()
+        } else {
+            self.selected_package()
+        }
     }
 
     fn manager_counts(&self) -> [usize; 6] {
@@ -188,7 +246,23 @@ impl App {
                 return false;
             }
             match key.code {
-                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Enter => self.overlay = None,
+                KeyCode::Esc | KeyCode::Char('n') if overlay == Overlay::ConfirmUninstall => {
+                    self.overlay = None;
+                    self.uninstall_target = None;
+                    self.uninstall_command = None;
+                }
+                KeyCode::Enter | KeyCode::Char('y') if overlay == Overlay::ConfirmUninstall => {
+                    self.overlay = None;
+                    self.start_uninstall();
+                }
+                KeyCode::Esc if overlay == Overlay::Help => {
+                    self.overlay = None;
+                    self.help_filtering = false;
+                    self.help_filter.clear();
+                }
+                KeyCode::Char('q') | KeyCode::Enter if overlay == Overlay::Help => {
+                    self.overlay = None
+                }
                 KeyCode::Char('?') if overlay == Overlay::Help => self.overlay = None,
                 KeyCode::Char('/') if overlay == Overlay::Help => {
                     self.help_filter.clear();
@@ -196,6 +270,17 @@ impl App {
                 }
                 _ => {}
             }
+            return false;
+        }
+
+        if key.code == KeyCode::Esc
+            && self
+                .uninstall_console
+                .as_ref()
+                .is_some_and(|console| !console.running)
+        {
+            self.uninstall_console = None;
+            self.detail_scroll = 0;
             return false;
         }
 
@@ -225,8 +310,23 @@ impl App {
                 self.package_index = 0;
                 self.update_filter();
             }
+            Some(Action::TogglePackageDependencies) => {
+                if let Some(package) = self.selected_package() {
+                    if package.dependencies.is_empty() {
+                        self.set_notice("Selected package has no dependency data");
+                    } else {
+                        self.show_package_dependencies = !self.show_package_dependencies;
+                        self.dependency_index = 0;
+                        self.focus = if self.show_package_dependencies {
+                            Focus::PackageDependencies
+                        } else {
+                            Focus::Packages
+                        };
+                    }
+                }
+            }
             Some(Action::Reload) => self.start_reload(),
-            Some(Action::Uninstall) => self.overlay = Some(Overlay::Unavailable),
+            Some(Action::Uninstall) => self.prepare_uninstall(),
             Some(Action::GotoAll) => self.select_tab(FilterTab::All),
             Some(Action::GotoPacman) => self.select_tab(FilterTab::Pacman),
             Some(Action::GotoAur) => self.select_tab(FilterTab::Aur),
@@ -274,6 +374,11 @@ impl App {
         let panes = [
             self.config.layout.show_managers.then_some(Focus::Managers),
             Some(Focus::Packages),
+            (self.show_package_dependencies
+                && self
+                    .selected_package()
+                    .is_some_and(|p| !p.dependencies.is_empty()))
+            .then_some(Focus::PackageDependencies),
             self.config.layout.show_details.then_some(Focus::Details),
         ]
         .into_iter()
@@ -303,10 +408,26 @@ impl App {
                     self.package_index = (self.package_index as isize + amount)
                         .clamp(0, self.filtered.len() as isize - 1)
                         as usize;
+                    self.dependency_index = 0;
+                }
+            }
+            Focus::PackageDependencies => {
+                let len = self
+                    .selected_package()
+                    .map_or(0, |package| package.dependencies.len());
+                if len > 0 {
+                    self.dependency_index = (self.dependency_index as isize + amount)
+                        .clamp(0, len as isize - 1)
+                        as usize;
+                    self.detail_scroll = 0;
                 }
             }
             Focus::Details => {
-                self.detail_scroll = self.detail_scroll.saturating_add_signed(amount as i16)
+                if self.uninstall_console.is_some() {
+                    self.console_scroll = self.console_scroll.saturating_add_signed(amount);
+                } else {
+                    self.detail_scroll = self.detail_scroll.saturating_add_signed(amount as i16)
+                }
             }
         }
     }
@@ -321,7 +442,19 @@ impl App {
                     0
                 }
             }
-            Focus::Details => self.detail_scroll = if bottom { u16::MAX } else { 0 },
+            Focus::PackageDependencies => {
+                let len = self
+                    .selected_package()
+                    .map_or(0, |package| package.dependencies.len());
+                self.dependency_index = if bottom { len.saturating_sub(1) } else { 0 };
+            }
+            Focus::Details => {
+                if self.uninstall_console.is_some() {
+                    self.console_scroll = if bottom { usize::MAX } else { 0 };
+                } else {
+                    self.detail_scroll = if bottom { u16::MAX } else { 0 };
+                }
+            }
         }
         if self.focus == Focus::Managers
             && let Some(tab) = FilterTab::from_index(self.manager_index)
@@ -342,7 +475,80 @@ impl App {
         let tx = self.reload_tx.clone();
         let custom = self.config.custom_managers.clone();
         thread::spawn(move || {
-            let _ = tx.send(scan_packages(custom));
+            let _ = tx.send(UiEvent::Packages(scan_packages(custom)));
+        });
+    }
+
+    fn prepare_uninstall(&mut self) {
+        let target = if matches!(self.focus, Focus::PackageDependencies | Focus::Details)
+            && self.show_package_dependencies
+        {
+            self.selected_dependency_package().cloned()
+        } else {
+            self.selected_package().cloned()
+        };
+        let Some(target) = target else {
+            self.set_notice("Dependency is not present in the installed package inventory");
+            return;
+        };
+        match build_uninstall_command(&target, &self.config.behavior, &self.config.custom_managers)
+        {
+            Ok(command) => {
+                self.uninstall_target = Some(target);
+                self.uninstall_command = Some(command);
+                if self.config.behavior.confirm_uninstall {
+                    self.overlay = Some(Overlay::ConfirmUninstall);
+                } else {
+                    self.start_uninstall();
+                }
+            }
+            Err(error) => self.set_notice(error),
+        }
+    }
+
+    fn start_uninstall(&mut self) {
+        let (Some(target), Some(command)) =
+            (self.uninstall_target.take(), self.uninstall_command.take())
+        else {
+            return;
+        };
+        let tx = self.reload_tx.clone();
+        let display = command.display.clone();
+        self.uninstall_console = Some(UninstallConsole {
+            package: target.name.clone(),
+            lines: vec![format!("$ {display}"), String::new()],
+            running: true,
+            exit_code: None,
+        });
+        self.console_scroll = usize::MAX;
+        self.focus = Focus::Details;
+        thread::spawn(move || {
+            let mut process = command.command();
+            process
+                .stdin(std::process::Stdio::null())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped());
+            let mut child = match process.spawn() {
+                Ok(child) => child,
+                Err(error) => {
+                    let _ = tx.send(UiEvent::UninstallOutput(format!(
+                        "Failed to start command: {error}"
+                    )));
+                    let _ = tx.send(UiEvent::UninstallFinished(None));
+                    return;
+                }
+            };
+            let stdout = child.stdout.take();
+            let stderr = child.stderr.take();
+            let out_tx = tx.clone();
+            let err_tx = tx.clone();
+            let out_reader = thread::spawn(move || read_output(stdout, out_tx));
+            let err_reader = thread::spawn(move || read_output(stderr, err_tx));
+            let status = child.wait().ok();
+            let _ = out_reader.join();
+            let _ = err_reader.join();
+            let code = status.and_then(|status| status.code());
+            let _ = tx.send(UiEvent::UninstallFinished(code));
         });
     }
 
@@ -367,6 +573,74 @@ impl App {
     fn set_notice(&mut self, message: impl Into<String>) {
         self.notice = Some((message.into(), Instant::now() + Duration::from_secs(3)));
     }
+
+    fn apply_ui_event(&mut self, event: UiEvent) {
+        match event {
+            UiEvent::Packages(mut packages) => {
+                self.sort.sort_packages(&mut packages);
+                self.packages = packages;
+                self.loading = false;
+                self.update_filter();
+                if self.reload_after_loading {
+                    self.reload_after_loading = false;
+                    self.start_reload();
+                }
+            }
+            UiEvent::UninstallOutput(line) => {
+                if let Some(console) = self.uninstall_console.as_mut() {
+                    console.lines.push(line);
+                    if console.lines.len() > 2_000 {
+                        let excess = console.lines.len() - 2_000;
+                        console.lines.drain(..excess);
+                    }
+                    self.console_scroll = usize::MAX;
+                }
+            }
+            UiEvent::UninstallFinished(code) => {
+                if let Some(console) = self.uninstall_console.as_mut() {
+                    console.running = false;
+                    console.exit_code = code;
+                    console.lines.push(match code {
+                        Some(0) => "\nCommand completed successfully.".into(),
+                        Some(code) => format!("\nCommand exited with status {code}."),
+                        None => "\nCommand terminated without an exit status.".into(),
+                    });
+                }
+                if code == Some(0) {
+                    self.set_notice("Uninstall completed; refreshing package inventory");
+                    self.start_reload();
+                } else {
+                    self.set_notice("Uninstall failed; see output in Details");
+                }
+            }
+        }
+    }
+}
+
+fn read_output<R: std::io::Read + Send + 'static>(reader: Option<R>, tx: Sender<UiEvent>) {
+    let Some(reader) = reader else {
+        return;
+    };
+    for line in BufReader::new(reader).lines() {
+        match line {
+            Ok(line) => {
+                let _ = tx.send(UiEvent::UninstallOutput(line));
+            }
+            Err(error) => {
+                let _ = tx.send(UiEvent::UninstallOutput(format!(
+                    "Output read error: {error}"
+                )));
+                break;
+            }
+        }
+    }
+}
+
+fn dependency_package_name(value: &str) -> &str {
+    let end = value
+        .find(|character: char| matches!(character, '<' | '>' | '='))
+        .unwrap_or(value.len());
+    value[..end].trim_end()
 }
 
 pub fn run(config: OmniConfig) -> Result<()> {
@@ -379,7 +653,7 @@ pub fn run_with_config_path(config: OmniConfig, explicit_config: Option<PathBuf>
     let app_tx = tx.clone();
     let custom = config.custom_managers.clone();
     thread::spawn(move || {
-        let _ = tx.send(scan_packages(custom));
+        let _ = tx.send(UiEvent::Packages(scan_packages(custom)));
     });
     let mut app = App::new(config, app_tx);
     let config_files = ConfigFiles::new(explicit_config);
@@ -391,19 +665,12 @@ pub fn run_with_config_path(config: OmniConfig, explicit_config: Option<PathBuf>
 fn event_loop(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     app: &mut App,
-    rx: &Receiver<Vec<UnifiedPackage>>,
+    rx: &Receiver<UiEvent>,
     watcher: &mut ConfigWatcher,
 ) -> Result<()> {
     loop {
-        if let Ok(mut packages) = rx.try_recv() {
-            app.sort.sort_packages(&mut packages);
-            app.packages = packages;
-            app.loading = false;
-            app.update_filter();
-            if app.reload_after_loading {
-                app.reload_after_loading = false;
-                app.start_reload();
-            }
+        for event in rx.try_iter() {
+            app.apply_ui_event(event);
         }
         if let Some(result) = watcher.poll() {
             match result {
@@ -653,18 +920,34 @@ fn render(frame: &mut Frame, app: &App) {
                 .keymap
                 .get_bindings(Action::ToggleDependencies)
                 .format_summary();
+            let package_dependency_key = app
+                .config
+                .keymap
+                .get_bindings(Action::TogglePackageDependencies)
+                .format_summary();
             help::render(
                 frame,
                 frame.area(),
                 theme,
                 app.config.layout.border_type(),
                 &dependency_key,
+                &package_dependency_key,
                 &app.help_filter,
                 app.help_filtering,
             )
         }
-        Some(Overlay::Unavailable) => {
-            render_unavailable(frame, frame.area(), theme, app.config.layout.border_type())
+        Some(Overlay::ConfirmUninstall) => {
+            if let (Some(package), Some(command)) = (&app.uninstall_target, &app.uninstall_command)
+            {
+                render_uninstall_confirm(
+                    frame,
+                    frame.area(),
+                    package,
+                    &command.display,
+                    theme,
+                    app.config.layout.border_type(),
+                );
+            }
         }
         None => {}
     }
@@ -748,6 +1031,19 @@ fn render_packages(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
         theme,
         panel_bg,
     );
+    let (list_area, deps_area) = if app.show_package_dependencies {
+        let rows = ratatui::layout::Layout::default()
+            .direction(ratatui::layout::Direction::Vertical)
+            .constraints([
+                ratatui::layout::Constraint::Min(1),
+                ratatui::layout::Constraint::Length(1),
+                ratatui::layout::Constraint::Length(7),
+            ])
+            .split(content_area);
+        (rows[0], Some((rows[1], rows[2])))
+    } else {
+        (content_area, None)
+    };
     let items = app
         .filtered
         .iter()
@@ -784,8 +1080,90 @@ fn render_packages(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
         ListState::default().with_selected((!app.filtered.is_empty()).then_some(app.package_index));
     frame.render_stateful_widget(
         List::new(items).style(Style::default().fg(theme.fg_color()).bg(panel_bg)),
-        content_area,
+        list_area,
         &mut state,
+    );
+    if let Some((rule_area, deps_area)) = deps_area {
+        frame.render_widget(
+            Paragraph::new("─".repeat(rule_area.width as usize))
+                .style(Style::default().fg(theme.border_color()).bg(panel_bg)),
+            rule_area,
+        );
+        render_package_dependencies(frame, deps_area, app, theme, panel_bg);
+    }
+}
+
+fn render_package_dependencies(
+    frame: &mut Frame,
+    area: Rect,
+    app: &App,
+    theme: &ThemeColors,
+    background: ratatui::style::Color,
+) {
+    let Some(package) = app.selected_package() else {
+        return;
+    };
+    let heading = Line::from(vec![
+        Span::styled(
+            " DEPENDENCIES ",
+            Style::default()
+                .fg(theme.border_focused_color())
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("{} ", package.dependencies.len()),
+            Style::default().fg(theme.border_color()),
+        ),
+        Span::styled("(i hide)", Style::default().fg(theme.border_color())),
+    ]);
+    let lines = package
+        .dependencies
+        .iter()
+        .enumerate()
+        .map(|(index, dependency)| {
+            let selected = index == app.dependency_index;
+            let marker = if selected { "▍ " } else { "  " };
+            let installed = app.selected_dependency_package().is_some();
+            let suffix = if installed { "" } else { " (not in inventory)" };
+            let line = Line::from(vec![
+                Span::styled(
+                    marker,
+                    Style::default().fg(if selected {
+                        theme.cursor_bar_color()
+                    } else {
+                        theme.border_color()
+                    }),
+                ),
+                Span::raw(format!("{dependency}{suffix}")),
+            ]);
+            ListItem::new(line).style(if selected && app.focus == Focus::PackageDependencies {
+                theme.selection_style()
+            } else {
+                Style::default().fg(theme.fg_color()).bg(background)
+            })
+        })
+        .collect::<Vec<_>>();
+    let visible = area.height.saturating_sub(1) as usize;
+    let start = app
+        .dependency_index
+        .saturating_sub(visible.saturating_sub(1));
+    let items = lines
+        .into_iter()
+        .skip(start)
+        .take(visible)
+        .collect::<Vec<_>>();
+    frame.render_widget(
+        Paragraph::new(heading).style(Style::default().fg(theme.fg_color()).bg(background)),
+        Rect::new(area.x, area.y, area.width, 1),
+    );
+    frame.render_widget(
+        List::new(items).style(Style::default().fg(theme.fg_color()).bg(background)),
+        Rect::new(
+            area.x,
+            area.y.saturating_add(1),
+            area.width,
+            area.height.saturating_sub(1),
+        ),
     );
 }
 
@@ -805,11 +1183,28 @@ fn render_details(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors)
         theme,
         panel_bg,
     );
-    let Some(package) = app.selected_package() else {
-        let message = if app.loading {
-            "Scanning installed packages…"
+    if let Some(console) = app.uninstall_console.as_ref() {
+        render_uninstall_console(
+            frame,
+            content_area,
+            console,
+            app.console_scroll,
+            theme,
+            panel_bg,
+        );
+        return;
+    }
+    let Some(package) = app.selected_detail_package() else {
+        let missing_dependency = app
+            .show_package_dependencies
+            .then(|| app.selected_dependency_name())
+            .flatten();
+        let message = if let Some(dependency) = missing_dependency {
+            format!("Dependency '{dependency}' is not in the installed inventory")
+        } else if app.loading {
+            "Scanning installed packages…".to_owned()
         } else {
-            "No package selected"
+            "No package selected".to_owned()
         };
         frame.render_widget(
             Paragraph::new(message)
@@ -842,6 +1237,16 @@ fn render_details(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors)
             theme,
         ),
     ];
+    if app.focus == Focus::PackageDependencies {
+        lines.insert(
+            2,
+            detail_line(
+                "Dependency",
+                app.selected_dependency_name().unwrap_or(""),
+                theme,
+            ),
+        );
+    }
     if let Some(date) = &package.install_date {
         lines.push(detail_line("Installed", date, theme));
     }
@@ -880,7 +1285,7 @@ fn render_details(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors)
                 .map(|line| Line::from(format!("{line}"))),
         );
     }
-    if !package.dependencies.is_empty() {
+    if !package.dependencies.is_empty() && !app.show_package_dependencies {
         lines.push(Line::from(""));
         lines.push(Line::from(Span::styled(
             "Dependencies",
@@ -928,6 +1333,101 @@ fn detail_line(label: &str, value: &str, theme: &ThemeColors) -> Line<'static> {
         ),
         Span::raw(value.to_owned()),
     ])
+}
+
+fn render_uninstall_console(
+    frame: &mut Frame,
+    area: Rect,
+    console: &UninstallConsole,
+    scroll: usize,
+    theme: &ThemeColors,
+    background: ratatui::style::Color,
+) {
+    let state = if console.running {
+        "running"
+    } else if console.exit_code == Some(0) {
+        "success"
+    } else {
+        "failed"
+    };
+    let title = Line::from(vec![
+        Span::styled(
+            " UNINSTALL ",
+            Style::default()
+                .fg(theme.border_focused_color())
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::styled(
+            format!("{} · {}", console.package, state),
+            Style::default().fg(theme.fg_color()),
+        ),
+    ]);
+    let lines = console
+        .lines
+        .iter()
+        .map(|line| {
+            let style = if line.starts_with("$ ") {
+                Style::default()
+                    .fg(theme.border_focused_color())
+                    .add_modifier(Modifier::BOLD)
+            } else if line.contains("error") || line.contains("failed") || line.contains("Error") {
+                Style::default().fg(ratatui::style::Color::Rgb(0xea, 0x69, 0x62))
+            } else {
+                Style::default().fg(theme.fg_color())
+            };
+            Line::from(Span::styled(line.clone(), style))
+        })
+        .collect::<Vec<_>>();
+    let inner = Rect::new(area.x, area.y, area.width, area.height);
+    if inner.height > 0 {
+        let max_scroll = console
+            .lines
+            .len()
+            .saturating_sub(area.height.saturating_sub(1) as usize);
+        let scroll = if scroll == usize::MAX {
+            max_scroll
+        } else {
+            scroll.min(max_scroll)
+        };
+        frame.render_widget(
+            Paragraph::new(title).style(Style::default().bg(background)),
+            Rect::new(inner.x, inner.y, inner.width, 1),
+        );
+        frame.render_widget(
+            Paragraph::new(Text::from(lines))
+                .scroll((scroll.min(u16::MAX as usize) as u16, 0))
+                .wrap(Wrap { trim: false })
+                .style(Style::default().fg(theme.fg_color()).bg(background)),
+            Rect::new(
+                inner.x,
+                inner.y.saturating_add(1),
+                inner.width,
+                inner.height.saturating_sub(1),
+            ),
+        );
+    }
+}
+
+fn render_uninstall_confirm(
+    frame: &mut Frame,
+    area: Rect,
+    package: &UnifiedPackage,
+    command: &str,
+    theme: &ThemeColors,
+    border: ratatui::widgets::BorderType,
+) {
+    let popup = centered(area, 74, 13);
+    frame.render_widget(Clear, popup);
+    let content = format!(
+        "Remove {} ({})?\n\nReview the command: custom managers may run arbitrary configured shell actions. Pacman targets only this package; it will refuse removal if required by another installed package.\nFor system packages, run sudo -v before opening Omni; password prompts are disabled in the TUI.\n\nCommand:\n{}\n\n[y/Enter] confirm   [n/Esc] cancel",
+        package.name, package.source, command
+    );
+    frame.render_widget(
+        Paragraph::new(content)
+            .wrap(Wrap { trim: true })
+            .block(popup_block(" Confirm uninstall ", theme, border)),
+        popup,
+    );
 }
 
 fn draw_panel(
@@ -1017,23 +1517,6 @@ fn render_dividers(frame: &mut Frame, dividers: &[Rect], theme: &ThemeColors) {
     }
 }
 
-fn render_unavailable(
-    frame: &mut Frame,
-    area: Rect,
-    theme: &ThemeColors,
-    border: ratatui::widgets::BorderType,
-) {
-    let popup = centered(area, 55, 23);
-    frame.render_widget(Clear, popup);
-    frame.render_widget(
-        Paragraph::new("Uninstallation is disabled in this alpha.\nNo system changes were made.\n\nPress Esc or Enter to close.")
-            .alignment(Alignment::Center)
-            .wrap(Wrap { trim: true })
-            .block(popup_block(" Uninstall unavailable ", theme, border)),
-        popup,
-    );
-}
-
 fn popup_block<'a>(
     title: &'a str,
     theme: &ThemeColors,
@@ -1060,6 +1543,18 @@ fn centered(area: Rect, width: u16, height: u16) -> Rect {
 
 fn truncate(value: &str, width: usize) -> String {
     value.chars().take(width).collect()
+}
+
+#[cfg(test)]
+mod uninstall_ui_tests {
+    use super::dependency_package_name;
+
+    #[test]
+    fn resolves_version_constrained_dependency_names() {
+        assert_eq!(dependency_package_name("glibc>=2.38"), "glibc");
+        assert_eq!(dependency_package_name("openssl < 4"), "openssl");
+        assert_eq!(dependency_package_name("zlib"), "zlib");
+    }
 }
 
 struct TerminalGuard {

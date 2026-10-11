@@ -43,6 +43,7 @@ pub fn render(
     theme: &ThemeColors,
     _border: ratatui::widgets::BorderType,
     dependency_key: &str,
+    package_dependency_key: &str,
     filter: &str,
     filtering: bool,
 ) {
@@ -73,7 +74,7 @@ pub fn render(
         ])
         .split(inner);
 
-    let shortcuts = shortcuts(dependency_key);
+    let shortcuts = shortcuts(dependency_key, package_dependency_key);
     let filter = filter.trim().to_lowercase();
     let mut lines = Vec::new();
     let mut active_section = None;
@@ -158,7 +159,7 @@ pub fn render(
     frame.render_widget(block, popup);
 }
 
-fn shortcuts(dependency_key: &str) -> Vec<Shortcut> {
+fn shortcuts(dependency_key: &str, package_dependency_key: &str) -> Vec<Shortcut> {
     use Section::{Browse, Navigation, Omni};
 
     vec![
@@ -200,7 +201,12 @@ fn shortcuts(dependency_key: &str) -> Vec<Shortcut> {
         Shortcut {
             section: Browse,
             keys: dependency_key.into(),
-            description: "Toggle dependency packages",
+            description: "Show or hide packages installed as dependencies",
+        },
+        Shortcut {
+            section: Browse,
+            keys: package_dependency_key.into(),
+            description: "Open dependency list for selected package",
         },
         Shortcut {
             section: Omni,
@@ -215,7 +221,12 @@ fn shortcuts(dependency_key: &str) -> Vec<Shortcut> {
         Shortcut {
             section: Omni,
             keys: "d / x".into(),
-            description: "Uninstall (disabled in this alpha)",
+            description: "Confirm uninstall; output appears in Details",
+        },
+        Shortcut {
+            section: Omni,
+            keys: "Esc".into(),
+            description: "Close completed uninstall output",
         },
     ]
 }

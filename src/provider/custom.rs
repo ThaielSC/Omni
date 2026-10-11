@@ -110,7 +110,11 @@ impl PackageManagerProvider for CustomManager {
             .skip(1)
             .collect::<Vec<_>>();
         let output = run(&self.config.binary, &args)?;
-        self.parse(&text(output)?)
+        let mut packages = self.parse(&text(output)?)?;
+        for package in &mut packages {
+            package.manager_id = Some(self.config.id.clone());
+        }
+        Ok(packages)
     }
 }
 fn pointer<'a>(v: &'a Value, p: Option<&String>) -> Option<&'a Value> {

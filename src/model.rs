@@ -270,6 +270,9 @@ pub struct UnifiedPackage {
     pub name: String,
     pub version: String,
     pub source: PackageSource,
+    /// Original manager identifier for dynamically configured managers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manager_id: Option<String>,
     #[serde(default, skip_serializing_if = "InstallReason::is_unknown")]
     pub install_reason: InstallReason,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -296,6 +299,7 @@ impl UnifiedPackage {
             name: name.into(),
             version: version.into(),
             source,
+            manager_id: None,
             install_reason: InstallReason::Unknown,
             size_bytes: None,
             description: None,

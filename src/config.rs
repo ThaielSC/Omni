@@ -584,6 +584,7 @@ pub enum Action {
     ToggleManagers,
     ToggleDetails,
     ToggleDependencies,
+    TogglePackageDependencies,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -908,6 +909,7 @@ pub struct KeymapConfig {
     pub toggle_managers: KeyBindings,
     pub toggle_details: KeyBindings,
     pub toggle_dependencies: KeyBindings,
+    pub toggle_package_dependencies: KeyBindings,
 }
 
 impl Default for KeymapConfig {
@@ -939,6 +941,7 @@ impl Default for KeymapConfig {
             toggle_managers: KeyBindings::new(["M"]),
             toggle_details: KeyBindings::new(["D"]),
             toggle_dependencies: KeyBindings::new(["e"]),
+            toggle_package_dependencies: KeyBindings::new(["i"]),
         }
     }
 }
@@ -973,6 +976,10 @@ impl KeymapConfig {
             (Action::ToggleManagers, &self.toggle_managers),
             (Action::ToggleDetails, &self.toggle_details),
             (Action::ToggleDependencies, &self.toggle_dependencies),
+            (
+                Action::TogglePackageDependencies,
+                &self.toggle_package_dependencies,
+            ),
         ];
 
         for (action, bindings) in action_map {
@@ -1017,6 +1024,7 @@ impl KeymapConfig {
             Action::ToggleManagers => &self.toggle_managers,
             Action::ToggleDetails => &self.toggle_details,
             Action::ToggleDependencies => &self.toggle_dependencies,
+            Action::TogglePackageDependencies => &self.toggle_package_dependencies,
         }
     }
 }
