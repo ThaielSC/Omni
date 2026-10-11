@@ -95,6 +95,8 @@ need_sudo       = false
 
 En Rust, el trait `PackageManagerProvider` se implementa de forma genérica con la estructura `CustomManager`:
 
+> **Seguridad:** `uninstall_cmd` es una línea de shell ejecutable, no una descripción declarativa inocua. Omni escapa los valores interpolados `{name}` y `{version}`, pero el resto de la plantilla se ejecuta tal cual. Trata `managers.toml` como código confiable; con `need_sudo = true`, la orden se ejecuta con privilegios elevados.
+
 ```rust
 #[derive(Debug, Clone, Deserialize)]
 pub struct CustomManagerConfig {

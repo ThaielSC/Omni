@@ -1,7 +1,7 @@
 # Omni (`omni`)
 
 [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](#)
-[![Version](https://img.shields.io/badge/version-v0.1.0--alpha.2-orange)](#)
+[![Version](https://img.shields.io/badge/version-v0.1.0--beta.1-orange)](#)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Theme: Gruvbox Material](https://img.shields.io/badge/theme-Gruvbox%20Material-yellow)](#)
 
@@ -64,7 +64,8 @@ Inspirado en la filosofía y ergonomía de **Helix, Vim y Yazi**: diseño minima
 | **`/`** | Activar la búsqueda interactiva (fuzzy search) |
 | **`s`** | Alternar ordenación: Tamaño descendente (`Size ▼`) ↔ Nombre (`Name ▲`) |
 | **`e`** | Alternar entre ocultar (`DEPS OFF`) e incluir (`DEPS ON`) dependencias detectadas |
-| **`d`** o **`x`** | Informa que la desinstalación todavía no está disponible en esta alpha |
+| **`i`** | Abrir la lista de dependencias del paquete seleccionado bajo la lista; `j/k` navega y Details muestra el elemento elegido |
+| **`d` / `x`** | Confirmar la desinstalación del paquete o dependencia seleccionada; la salida se conserva en Details |
 | **`r`** | Recargar / reescanear paquetes en segundo plano |
 | **`?`** | Mostrar / ocultar ventana flotante de ayuda |
 | **`q`** o **`Ctrl-C`** | Salir de la aplicación |

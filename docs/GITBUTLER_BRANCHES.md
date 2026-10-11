@@ -1,43 +1,31 @@
-# Estructura de Virtual Branches en GitButler para Omni
+# Ramas virtuales de GitButler para Omni
 
-Esta estructura organiza las ramas virtuales apiladas (stacked branches) para GitButler:
+Omni usa el CLI `but` y ramas virtuales apiladas. No usar comandos Git de escritura (`git add`, `git commit`, `git checkout`, `git push`) para administrar este stack.
 
-## 1. `feat/docs-spec` (Base de Especificación)
-- `docs/ROADMAP.md`
-- `docs/UI_UX_SPEC.md`
-- `docs/CONFIGURATION_SPEC.md`
-- `docs/MANAGERS_SPEC.md`
-- `docs/GITBUTLER_BRANCHES.md`
+## Stack actual
 
-## 2. `feat/models-and-config` (Milestone 1: Core & Config)
-- `Cargo.toml` / `Cargo.lock`
-- `.gitignore`
-- `src/lib.rs`
-- `src/main.rs`
-- `src/model.rs`
-- `src/config.rs`
-- `src/utils/`
+```text
+feat/docs
+└─ feat/models-config
+   └─ feat/e2e-test-suite
+      └─ feat/providers-import
+         └─ feat/tui
+```
 
-## 3. `feat/e2e-test-suite` (Milestone 1 Test Harness)
-- `tests/e2e_cli_test.rs`
-- `tests/common/`
-- `tests/fixtures/`
+Las ramas aparecen simultáneamente en el workspace GitButler; cada rama hija se apoya en las anteriores.
 
-## 4. `feat/providers` (Milestone 2: Package Managers)
-- `src/provider/mod.rs`
-- `src/provider/pacman.rs`
-- `src/provider/yay.rs`
-- `src/provider/flatpak.rs`
-- `src/provider/cargo.rs`
-- `src/provider/uv.rs`
-- `src/provider/pip.rs`
-- `src/provider/custom.rs` (Soporte `managers.toml`)
+## Responsabilidades
 
-## 5. `feat/tui-interface` (Milestone 3: Ratatui 3-Column UI)
-- `src/ui/mod.rs`
-- `src/ui/app.rs`
-- `src/ui/layout.rs` (3 columnas con proporciones configurables)
-- `src/ui/theme.rs` (Gruvbox Material)
-- `src/ui/statusline.rs` (Helix / Vim statusline)
-- `src/ui/help.rs` (Modal de ayuda flotante con `?`)
-- `src/ui/modal.rs` (Confirmación de desinstalación)
+1. `feat/docs`: especificaciones, roadmap y documentación base.
+2. `feat/models-config`: modelos unificados, configuración TOML y utilidades.
+3. `feat/e2e-test-suite`: fixtures y pruebas de CLI/core.
+4. `feat/providers-import`: providers nativos y dinámicos, CLI texto/JSON y clasificación `InstallReason`.
+5. `feat/tui`: interfaz Ratatui, navegación, statusline, búsqueda, filtro de dependencias y temas/layout configurables.
+
+## Flujo de trabajo
+
+- Revisar el orden y las asignaciones con `but status`; para obtener IDs de archivos usa `but status -fv` o `but diff`.
+- Crear commits selectivos con `but commit -b <rama> -m "<mensaje>" <ids>`.
+- Para apilar una rama existente se usa `but move <hija> --above <padre>`.
+- Sincronizar el workspace con `but pull`; publicar y crear PRs con `but push` / `but pr new` según el flujo de la skill local `but`.
+- Las operaciones de desinstalación pasan por confirmación en la TUI; los cambios privilegiados requieren autorización previa (`sudo -v` con sudo).
