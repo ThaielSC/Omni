@@ -142,7 +142,6 @@ pub fn build_uninstall_command_with_projects(
     projects: &ProjectManagersConfig,
 ) -> Result<UninstallCommand, String> {
     let name = validate_value("package name", &package.name)?;
-    let version = validate_value("package version", &package.version)?;
 
     if let Some(manager_id) = package.manager_id.as_deref() {
         if let Some((ecosystem, root)) = parse_project_manager_id(manager_id) {
@@ -152,6 +151,7 @@ pub fn build_uninstall_command_with_projects(
             .iter()
             .find(|manager| manager.id == manager_id)
             .ok_or_else(|| format!("Custom package manager '{manager_id}' is not configured"))?;
+        let version = validate_value("package version", &package.version)?;
         return build_custom_command(manager, name, version, behavior);
     }
 
@@ -729,6 +729,17 @@ mod tests {
             ["-n", "pacman", "-R", "--noconfirm", "--", "-name"]
         );
         assert_eq!(command.sudo_program(), Some("sudo"));
+    }
+
+    #[test]
+    fn flatpak_uninstall_accepts_missing_version_metadata() {
+        let package = UnifiedPackage::new("org.example.App", "", PackageSource::Flatpak);
+        let command = build_uninstall_command(&package, &BehaviorConfig::default(), &[]).unwrap();
+        assert_eq!(command.program(), "flatpak");
+        assert_eq!(
+            command.args(),
+            ["uninstall", "--noninteractive", "--", "org.example.App"]
+        );
     }
 
     #[test]

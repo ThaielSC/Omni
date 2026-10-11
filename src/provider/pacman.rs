@@ -1,8 +1,26 @@
 use super::*;
 use crate::model::{InstallReason, PackageSource};
+use std::process::Command;
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PacmanProvider;
+
+fn parse_query_output(output: std::process::Output) -> Result<Vec<UnifiedPackage>, ProviderError> {
+    // pacman exits with status 1 and no output when the local database is
+    // empty. Treat that specific response as an empty inventory; other
+    // failures still need to surface as provider errors.
+    if output.status.success() {
+        Ok(parse_packages(&String::from_utf8_lossy(&output.stdout)))
+    } else if output.status.code() == Some(1)
+        && output.stdout.is_empty()
+        && output.stderr.is_empty()
+    {
+        Ok(Vec::new())
+    } else {
+        Err(ProviderError::CommandFailed("pacman -Qi".into()))
+    }
+}
+
 pub fn parse_packages(input: &str) -> Vec<UnifiedPackage> {
     input
         .split("\n\n")
@@ -80,8 +98,15 @@ impl PackageManagerProvider for PacmanProvider {
         available("pacman")
     }
     fn list_packages(&self) -> Result<Vec<UnifiedPackage>, ProviderError> {
-        let output = run("pacman", &["-Qi"])?;
-        Ok(parse_packages(&String::from_utf8_lossy(&output.stdout)))
+        let output = Command::new("pacman").arg("-Qi").output().map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                ProviderError::NotAvailable("pacman".into())
+            } else {
+                ProviderError::Io(e)
+            }
+        })?;
+
+        parse_query_output(output)
     }
 }
 #[cfg(test)]
@@ -95,5 +120,29 @@ mod tests {
         assert_eq!(p.len(), 1);
         assert_eq!(p[0].size_bytes, Some(2_621_440));
         assert_eq!(p[0].description.as_deref(), Some("Editor"));
+    }
+
+    #[test]
+    fn accepts_pacman_empty_database_response() {
+        use std::os::unix::process::ExitStatusExt;
+
+        let output = std::process::Output {
+            status: std::process::ExitStatus::from_raw(1 << 8),
+            stdout: Vec::new(),
+            stderr: Vec::new(),
+        };
+        assert!(parse_query_output(output).unwrap().is_empty());
+    }
+
+    #[test]
+    fn does_not_suppress_pacman_errors_with_diagnostics() {
+        use std::os::unix::process::ExitStatusExt;
+
+        let output = std::process::Output {
+            status: std::process::ExitStatus::from_raw(1 << 8),
+            stdout: Vec::new(),
+            stderr: b"database is locked".to_vec(),
+        };
+        assert!(parse_query_output(output).is_err());
     }
 }
