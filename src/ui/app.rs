@@ -1912,11 +1912,18 @@ fn render(frame: &mut Frame, app: &App) {
         Block::default().style(Style::default().bg(theme.bg_color())),
         frame.area(),
     );
-    let areas = layout::split(frame.area(), &app.config.layout);
+    let focused_pane = match app.focus {
+        Focus::Managers => layout::FocusedPane::Managers,
+        Focus::Packages | Focus::PackageDependencies => layout::FocusedPane::Packages,
+        Focus::Details => layout::FocusedPane::Details,
+    };
+    let areas = layout::split(frame.area(), &app.config.layout, focused_pane);
     if let Some(area) = areas.managers {
         render_managers(frame, area, app, theme);
     }
-    render_packages(frame, areas.packages, app, theme);
+    if areas.packages.width > 0 && areas.packages.height > 0 {
+        render_packages(frame, areas.packages, app, theme);
+    }
     if let Some(area) = areas.details {
         render_details(frame, area, app, theme);
     }
