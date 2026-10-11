@@ -38,8 +38,15 @@ impl UninstallCommand {
         }
     }
 
-    pub fn custom_update(program: String, args: Vec<String>, display: String) -> Self {
-        Self::direct(program, args, display, None)
+    pub fn custom_update(
+        program: String,
+        args: Vec<String>,
+        behavior: &BehaviorConfig,
+        needs_privileges: bool,
+    ) -> Result<Self, String> {
+        let (program, args, display, sudo_index) =
+            privileged_command(&program, args, behavior, needs_privileges)?;
+        Ok(Self::direct(program, args, display, sudo_index))
     }
 
     /// Mark a command that delegates sudo authentication to a child process
@@ -577,14 +584,14 @@ fn privileged_command(
     if needs_privileges {
         let (sudo, sudo_args) = sudo_parts(behavior)?;
         let mut full_args = sudo_args;
-        let sudo_index = full_args.len();
+        let sudo_index = is_sudo_executable(&sudo).then_some(full_args.len());
         // Keep normal execution non-interactive. The TUI replaces this flag
         // with sudo's stdin-password mode only after the user confirms.
         full_args.push("-n".to_owned());
         full_args.push(binary.to_owned());
         let display = render_command(binary, &args);
         full_args.extend(args);
-        Ok((sudo, full_args, display, Some(sudo_index)))
+        Ok((sudo, full_args, display, sudo_index))
     } else {
         let display = render_command(binary, &args);
         Ok((binary.to_owned(), args, display, None))
@@ -596,13 +603,20 @@ fn shell_command_with_sudo(
     behavior: &BehaviorConfig,
 ) -> Result<(String, Vec<String>, String, Option<usize>), String> {
     let (sudo, mut args) = sudo_parts(behavior)?;
-    let sudo_index = args.len();
+    let sudo_index = is_sudo_executable(&sudo).then_some(args.len());
     args.push("-n".to_owned());
     args.push("sh".to_owned());
     args.push("-c".to_owned());
     args.push(script.to_owned());
     let display = render_command(&sudo, &args);
-    Ok((sudo, args, display, Some(sudo_index)))
+    Ok((sudo, args, display, sudo_index))
+}
+
+fn is_sudo_executable(program: &str) -> bool {
+    std::path::Path::new(program)
+        .file_name()
+        .and_then(|name| name.to_str())
+        == Some("sudo")
 }
 
 fn sudo_parts(behavior: &BehaviorConfig) -> Result<(String, Vec<String>), String> {
@@ -645,6 +659,64 @@ mod tests {
             command.args()[3],
             "npm uninstall 'odd name; touch /tmp/pwn' --version '1'\\''2'"
         );
+    }
+
+    #[test]
+    fn custom_update_uses_configured_sudo_prompt_when_requested() {
+        let behavior = BehaviorConfig::default();
+        let command = UninstallCommand::custom_update(
+            "pkgctl".into(),
+            vec!["upgrade".into(), "demo".into()],
+            &behavior,
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(command.program(), "sudo");
+        assert_eq!(command.args(), ["-n", "pkgctl", "upgrade", "demo"]);
+        assert_eq!(command.display, "'pkgctl' 'upgrade' 'demo'");
+        assert!(command.requires_stdin_password());
+        assert_eq!(
+            command
+                .command_with_stdin_password()
+                .get_args()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect::<Vec<_>>(),
+            ["-k", "-S", "-p", "", "pkgctl", "upgrade", "demo"]
+        );
+    }
+
+    #[test]
+    fn custom_update_without_privileges_runs_directly() {
+        let behavior = BehaviorConfig::default();
+        let command = UninstallCommand::custom_update(
+            "pkgctl".into(),
+            vec!["upgrade".into(), "demo".into()],
+            &behavior,
+            false,
+        )
+        .unwrap();
+
+        assert_eq!(command.program(), "pkgctl");
+        assert_eq!(command.args(), ["upgrade", "demo"]);
+        assert!(!command.requires_stdin_password());
+    }
+
+    #[test]
+    fn custom_update_with_doas_does_not_use_sudo_stdin_protocol() {
+        let mut behavior = BehaviorConfig::default();
+        behavior.sudo_command = "doas".into();
+        let command = UninstallCommand::custom_update(
+            "pkgctl".into(),
+            vec!["upgrade".into(), "demo".into()],
+            &behavior,
+            true,
+        )
+        .unwrap();
+
+        assert_eq!(command.program(), "doas");
+        assert_eq!(command.args(), ["-n", "pkgctl", "upgrade", "demo"]);
+        assert!(!command.requires_stdin_password());
     }
 
     #[test]
@@ -694,6 +766,7 @@ mod tests {
         behavior.sudo_command = "doas".into();
         let command = build_uninstall_command(&package, &behavior, &[]).unwrap();
         assert_eq!(command.sudo_program(), None);
+        assert!(!command.requires_stdin_password());
     }
 
     #[test]

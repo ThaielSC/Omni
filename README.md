@@ -192,7 +192,7 @@ help = "?"
 
 Los cambios válidos se aplican mientras la aplicación está abierta. Si un archivo queda temporalmente inválido durante la edición, Omni mantiene la última configuración válida y muestra una notificación. La referencia completa de opciones está en [CONFIGURATION_SPEC.md](docs/CONFIGURATION_SPEC.md).
 
-El atajo `c` copia el nombre del paquete bajo el cursor. En Linux hace falta un helper de portapapeles: Omni prueba `wl-copy` (paquete `wl-clipboard`), `xclip` y `xsel`, en ese orden. El atajo puede reasignarse con `copy_package_name`.
+El atajo `c` copia el nombre del paquete bajo el cursor. En Linux hace falta un helper de portapapeles: Omni prueba `wl-copy` (paquete `wl-clipboard`), `xclip` y `xsel`, en ese orden. La copia se realiza en segundo plano para no bloquear la TUI; cada helper tiene un límite de espera y, si falla, Omni muestra una notificación. El atajo puede reasignarse con `copy_package_name`.
 
 ### Gestores de proyectos
 
@@ -272,7 +272,7 @@ El archivo rota al superar 1 MiB, conserva una copia `.log.1` y se crea con perm
 - La consulta de actualizaciones cubre Pacman, AUR, Flatpak, uv, pip, Cargo global (si está instalado `cargo-update`), managers personalizados configurados y proyectos Cargo/npm/Bun. La actualización de cada gestor sigue las reglas de sus lockfiles y rangos.
 - La clasificación entre paquetes explícitos y dependencias depende de la información que entregue cada proveedor.
 - Los metadatos de dependencias no están disponibles de forma uniforme entre todos los gestores.
-- La consulta de updates de herramientas Cargo global requiere el subcomando opcional `cargo install-update`; sin él se informa como no compatible. Los managers personalizados requieren `update_check_cmd` y `update_cmd` configurados para consultar y ejecutar updates.
+- La consulta de updates de herramientas Cargo global requiere el subcomando opcional `cargo install-update`; sin él se informa como no compatible. Los managers personalizados requieren `update_check_cmd` y `update_cmd` configurados para consultar y ejecutar updates. `need_sudo = true` también se aplica a esas actualizaciones: Omni usa su prompt protegido cuando el helper configurado es `sudo`; otros helpers, como `doas`, deben tener autorización no interactiva configurada.
 - Las actualizaciones de proyecto cambian manifiestos/lockfiles según la política del gestor; revisa el comando mostrado en la confirmación antes de aceptar.
 - Una suite automatizada no reemplaza la validación manual de cada gestor y método de autorización en un entorno descartable; esa revisión sigue siendo necesaria antes de una versión estable.
 - El proyecto usa licencia MIT; consulta [LICENSE](LICENSE).
