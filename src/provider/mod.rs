@@ -18,6 +18,7 @@ pub mod yay;
 pub use uninstall::{
     UninstallCommand, build_project_add_command, build_project_update_command,
     build_uninstall_command, build_uninstall_command_with_projects, build_update_command,
+    build_uv_update_command,
 };
 
 pub trait PackageManagerProvider: Send + Sync {

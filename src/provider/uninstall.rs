@@ -263,6 +263,23 @@ mod update_command_tests {
         .unwrap_err();
         assert!(error.contains("must not begin"));
     }
+
+    #[test]
+    fn uv_update_reinstalls_the_detected_version() {
+        let command = build_uv_update_command("cowsay", "6.1").unwrap();
+        assert_eq!(command.program(), "uv");
+        assert_eq!(
+            command.args(),
+            ["tool", "install", "--force", "cowsay==6.1"]
+        );
+    }
+
+    #[test]
+    fn uv_update_rejects_unsafe_package_or_version_values() {
+        assert!(build_uv_update_command("--help", "6.1").is_err());
+        assert!(build_uv_update_command("cowsay", "--help").is_err());
+        assert!(build_uv_update_command("cowsay", "6.1 --help").is_err());
+    }
 }
 
 /// Build the project dependency-add operation using a direct argv (never a
@@ -281,6 +298,37 @@ pub fn build_project_add_command(
         ));
     }
     build_project_command(ecosystem, project_root, package_name, true, config)
+}
+
+/// Build an update for one uv-installed tool using the version discovered by
+/// `uv tool list --outdated`. `uv tool upgrade` respects exact version pins and
+/// can succeed without changing anything, so use the confirmed target version.
+pub fn build_uv_update_command(
+    package_name: &str,
+    target_version: &str,
+) -> Result<UninstallCommand, String> {
+    let name = validate_value("package name", package_name)?;
+    if name.starts_with('-')
+        || name.chars().any(char::is_whitespace)
+        || name.chars().any(char::is_control)
+    {
+        return Err("Package names must not begin with '-' or contain whitespace".to_owned());
+    }
+    let version = validate_value("update version", target_version)?;
+    if version.starts_with('-')
+        || version.chars().any(char::is_whitespace)
+        || version.chars().any(char::is_control)
+    {
+        return Err("Invalid update version".to_owned());
+    }
+    let args = vec![
+        "tool".to_owned(),
+        "install".to_owned(),
+        "--force".to_owned(),
+        format!("{name}=={version}"),
+    ];
+    let display = render_command("uv", &args);
+    Ok(UninstallCommand::direct("uv", args, display, None))
 }
 
 /// Build project-local update commands. Cargo and Node package managers treat
@@ -447,7 +495,9 @@ pub fn build_update_command(
             vec!["install".into(), "--force".into()],
             None,
         ),
-        PackageSource::Uv => ("uv".to_owned(), vec!["tool".into(), "upgrade".into()], None),
+        PackageSource::Uv => {
+            return Err("uv updates require the detected target version".to_owned());
+        }
         PackageSource::Pip => (
             "pip".to_owned(),
             vec!["install".into(), "--upgrade".into()],
