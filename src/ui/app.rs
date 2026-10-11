@@ -1666,13 +1666,29 @@ fn render_managers(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
         panel_bg,
     );
     let counts = app.manager_counts();
+    let update_counts: [usize; 6] = FilterTab::ALL.map(|tab| {
+        app.packages
+            .iter()
+            .filter(|package| tab.matches(package.source))
+            .filter(|package| package.latest_version.is_some())
+            .filter(|package| {
+                app.show_dependencies || package.install_reason != InstallReason::Dependency
+            })
+            .filter(|package| {
+                app.query.is_empty()
+                    || SkimMatcherV2::default()
+                        .fuzzy_match(&package.name, &app.query)
+                        .is_some()
+            })
+            .count()
+    });
     let selected_style = theme.selection_style().add_modifier(Modifier::BOLD);
     let mut items = FilterTab::ALL
         .iter()
         .enumerate()
         .map(|(index, tab)| {
             let selected = index == app.manager_index;
-            let line = Line::from(vec![
+            let mut spans = vec![
                 Span::styled(
                     if selected { "▍" } else { " " },
                     if selected {
@@ -1682,7 +1698,17 @@ fn render_managers(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
                     },
                 ),
                 Span::raw(format!(" {:<9} {:>5}", tab.display_name(), counts[index])),
-            ]);
+            ];
+            if update_counts[index] > 0 {
+                spans.push(Span::raw(" "));
+                spans.push(Span::styled(
+                    format!("↑{}", update_counts[index]),
+                    Style::default()
+                        .fg(theme.border_focused_color())
+                        .add_modifier(Modifier::BOLD),
+                ));
+            }
+            let line = Line::from(spans);
             ListItem::new(line).style(if selected {
                 selected_style
             } else {
@@ -1706,7 +1732,21 @@ fn render_managers(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
                         .is_some()
             })
             .count();
-        let line = Line::from(vec![
+        let update_count = project
+            .packages
+            .iter()
+            .filter(|package| package.latest_version.is_some())
+            .filter(|package| {
+                app.show_dependencies || package.install_reason != InstallReason::Dependency
+            })
+            .filter(|package| {
+                app.query.is_empty()
+                    || SkimMatcherV2::default()
+                        .fuzzy_match(&package.name, &app.query)
+                        .is_some()
+            })
+            .count();
+        let mut spans = vec![
             Span::styled(
                 if selected { "▍" } else { " " },
                 if selected {
@@ -1716,7 +1756,17 @@ fn render_managers(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
                 },
             ),
             Span::raw(format!(" {:<15} {:>5}", project.label, count)),
-        ]);
+        ];
+        if update_count > 0 {
+            spans.push(Span::raw(" "));
+            spans.push(Span::styled(
+                format!("↑{update_count}"),
+                Style::default()
+                    .fg(theme.border_focused_color())
+                    .add_modifier(Modifier::BOLD),
+            ));
+        }
+        let line = Line::from(spans);
         items.push(ListItem::new(line).style(if selected {
             selected_style
         } else {
@@ -1782,7 +1832,7 @@ fn render_packages(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
                 .size_bytes
                 .map(|bytes| format_bytes(Some(bytes)))
                 .unwrap_or_else(|| "—".into());
-            let available_width = content_area.width.saturating_sub(17) as usize;
+            let available_width = content_area.width.saturating_sub(18) as usize;
             let name = truncate(&package.name, available_width);
             let spans = vec![
                 Span::styled(marker, Style::default().fg(theme.cursor_bar_color())),
@@ -1796,7 +1846,7 @@ fn render_packages(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
                         .add_modifier(Modifier::BOLD),
                 ),
                 Span::styled(
-                    if has_update { "↑" } else { " " },
+                    if has_update { "↑ " } else { "  " },
                     if has_update {
                         Style::default()
                             .fg(theme.border_focused_color())
@@ -1806,7 +1856,7 @@ fn render_packages(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
                     },
                 ),
                 Span::styled(
-                    format!("{name:<width$}", width = available_width.saturating_sub(1)),
+                    format!("{name:<width$}", width = available_width.saturating_sub(2)),
                     theme.badge_style_for_manager(package.source.name()),
                 ),
                 Span::styled(
