@@ -2118,9 +2118,12 @@ fn render_managers(frame: &mut Frame, area: Rect, app: &App, theme: &ThemeColors
                         .is_some()
             })
             .count();
-        let update_count = project
+        let update_count = app
             .packages
             .iter()
+            .filter(|package| {
+                package.manager_id.as_deref() == Some(project.manager_id.as_str())
+            })
             .filter(|package| package.latest_version.is_some())
             .filter(|package| {
                 app.show_dependencies || package.install_reason != InstallReason::Dependency
