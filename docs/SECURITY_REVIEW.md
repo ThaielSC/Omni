@@ -1,7 +1,7 @@
 # Security review
 
 Review date: 2026-10-11  
-Reviewed revision: `feat/updates` after package-update fixes and compact TUI review.
+Reviewed revision: merged `main` candidate `1.0.0` (commit `996a1d1` plus release metadata).
 
 ## Command execution review
 
@@ -14,7 +14,7 @@ Reviewed revision: `feat/updates` after package-update fixes and compact TUI rev
 
 ## Dependency audit
 
-- `cargo audit` (cargo-audit 0.22.2) fetched the current RustSec advisory database and scanned `Cargo.lock` on 2026-10-11: **217 locked crate dependencies, 0 known vulnerabilities, 0 warnings** (exit status 0).
+- `cargo audit` (cargo-audit 0.22.2) fetched the current RustSec advisory database and scanned `Cargo.lock` on 2026-10-11: **217 locked crate dependencies, 0 known vulnerabilities, 0 warnings** (exit status 0). JSON summary: `vulnerabilities.found=false`, `vulnerabilities.count=0`, `warnings={}`.
 - An OSV batch query of the registry package versions also returned zero findings. Advisory databases change; rerun `cargo audit` before each release.
 - `tokio` and `async-trait` were removed from direct dependencies because the current implementation uses standard-library threads and does not reference either crate. `cargo check` confirmed the reduced dependency graph builds.
 

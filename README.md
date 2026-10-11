@@ -2,7 +2,7 @@
 
 Omni es una aplicación de terminal escrita en Rust para consultar y gestionar paquetes instalados mediante varios gestores desde una sola interfaz. Su TUI está pensada para teclado, con navegación inspirada en Vim y Helix, tres paneles y una statusline compacta.
 
-> **Estado:** versión temprana `0.1.0-beta.1`. La interfaz y los proveedores principales ya existen, pero el proyecto sigue en desarrollo. Consulta [limitaciones conocidas](#limitaciones-conocidas) antes de usar operaciones de mantenimiento.
+> **Versión:** `1.0.0` (estable). Consulta [limitaciones conocidas](#limitaciones-conocidas) y la [cobertura por proveedor](docs/PROVIDER_SUPPORT.md) antes de usar operaciones de mantenimiento.
 
 ## Contenido
 
@@ -17,6 +17,7 @@ Omni es una aplicación de terminal escrita en Rust para consultar y gestionar p
 - [Gestores personalizados](#gestores-personalizados)
 - [Desarrollo y pruebas](#desarrollo-y-pruebas)
 - [Documentación](#documentación)
+- [Registro de cambios](CHANGELOG.md)
 - [Limitaciones conocidas](#limitaciones-conocidas)
 
 ## Características
@@ -272,6 +273,7 @@ El archivo rota al superar 1 MiB, conserva una copia `.log.1` y se crea con perm
 - [Gestores personalizados](docs/MANAGERS_SPEC.md)
 - [Cobertura y límites por proveedor](docs/PROVIDER_SUPPORT.md)
 - [Política de versiones y tags](docs/VERSIONING.md)
+- [Registro de cambios](CHANGELOG.md)
 - [Revisión de seguridad](docs/SECURITY_REVIEW.md)
 - [Flujo de GitButler](docs/GITBUTLER_BRANCHES.md)
 - [Guía de continuación](docs/HANDOFF.md)
@@ -283,5 +285,5 @@ El archivo rota al superar 1 MiB, conserva una copia `.log.1` y se crea con perm
 - Los metadatos de dependencias no están disponibles de forma uniforme entre todos los gestores.
 - La consulta de updates de herramientas Cargo global requiere el subcomando opcional `cargo install-update`; sin él se informa como no compatible. Los managers personalizados requieren `update_check_cmd` y `update_cmd` configurados para consultar y ejecutar updates. `need_sudo = true` también se aplica a esas actualizaciones: Omni usa su prompt protegido cuando el helper configurado es `sudo`; otros helpers, como `doas`, deben tener autorización no interactiva configurada.
 - Las actualizaciones de proyecto cambian manifiestos/lockfiles según la política del gestor; revisa el comando mostrado en la confirmación antes de aceptar.
-- Una suite automatizada no reemplaza la validación manual de cada gestor y método de autorización en un entorno descartable; esa revisión sigue siendo necesaria antes de una versión estable.
+- Las capacidades y limitaciones de metadatos varían por proveedor; consulta [cobertura por proveedor](docs/PROVIDER_SUPPORT.md). Las pruebas de operaciones se hacen en entornos descartables; no pruebes eliminaciones sobre una instalación que necesites conservar.
 - El proyecto usa licencia MIT; consulta [LICENSE](LICENSE).
