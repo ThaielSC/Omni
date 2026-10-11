@@ -25,6 +25,7 @@ Inspirado en la filosofía y ergonomía de **Helix, Vim y Yazi**: diseño minima
 - 🧹 **Vista enfocada**: Oculta por defecto las dependencias que el gestor identifica como tales; `e` permite incluirlas. Los elementos sin clasificación siguen visibles.
 - 🛡️ **Acciones seguras**: La desinstalación aún no está habilitada en esta alpha; `d` / `x` informa que no se realizó ningún cambio.
 - ⚡ **Carga en segundo plano**: Los inventarios se leen fuera del bucle de eventos para mantener la navegación fluida.
+- 🔄 **Live reload de configuración**: Los cambios en los TOML se aplican sin reiniciar; los gestores personalizados vuelven a escanearse en segundo plano.
 
 ---
 
@@ -85,6 +86,8 @@ Omni es 100% personalizable a través de archivos TOML en `~/.config/omni/`:
 - **Temas y Colores (`theme.toml`)**: Permite ajustar colores de selección, badges, statusline y fondos por panel (`panel_managers_bg`, `panel_packages_bg`, `panel_details_bg`).
 - **Atajos (`keymap.toml`)**: Reasignación completa de teclas de navegación y acciones.
 - **Gestores Personalizados (`managers.toml`)**: Define nuevos gestores con `list_cmd`, `format` (regex o json) y `uninstall_cmd`.
+
+Los cambios en estos archivos se detectan mientras la TUI está abierta. Si un TOML no es válido durante la edición, Omni conserva los últimos ajustes válidos y muestra un aviso temporal.
 
 ---
 
