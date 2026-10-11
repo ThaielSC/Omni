@@ -40,6 +40,14 @@ info_cmd = "uv tool show {name}"
 uninstall_cmd = "uv tool uninstall {name}"
 need_sudo = false
 
+# Updates son opt-in. Los argumentos se separan en argv (sin shell).
+update_check_cmd = "outdated --json"
+update_format = "json"                 # json o line_regex
+update_json_array_path = "/updates"
+update_json_name = "/name"
+update_json_latest_version = "/latest"
+update_cmd = "update {name} --to {latest_version}"
+
 
 # --- Gestor de Paquetes Ruby: Gem ---
 [[manager]]
@@ -115,6 +123,13 @@ pub struct CustomManagerConfig {
     pub size_cmd: Option<String>,
     pub info_cmd: Option<String>,
     pub uninstall_cmd: String,
+    pub update_check_cmd: Option<String>,
+    pub update_format: Option<OutputFormat>,
+    pub update_parse_regex: Option<String>,
+    pub update_json_array_path: Option<String>,
+    pub update_json_name: Option<String>,
+    pub update_json_latest_version: Option<String>,
+    pub update_cmd: Option<String>,
     #[serde(default)]
     pub need_sudo: bool,
 }

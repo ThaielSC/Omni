@@ -251,8 +251,10 @@ El proyecto usa la edición 2024 de Rust. La TUI se construye con Ratatui y Cros
 
 ## Limitaciones conocidas
 
-- La comprobación de actualizaciones solo cubre Pacman y AUR actualmente.
+- La consulta de actualizaciones cubre Pacman, AUR, Flatpak, uv, pip, Cargo global (si está instalado `cargo-update`), managers personalizados configurados y proyectos Cargo/npm/Bun. La actualización de cada gestor sigue las reglas de sus lockfiles y rangos.
 - La clasificación entre paquetes explícitos y dependencias depende de la información que entregue cada proveedor.
 - Los metadatos de dependencias no están disponibles de forma uniforme entre todos los gestores.
+- La consulta de updates de herramientas Cargo global requiere el subcomando opcional `cargo install-update`; sin él se informa como no compatible. Los managers personalizados requieren `update_check_cmd` y `update_cmd` configurados para consultar y ejecutar updates.
+- Las actualizaciones de proyecto cambian manifiestos/lockfiles según la política del gestor; revisa el comando mostrado en la confirmación antes de aceptar.
 - Una suite automatizada no reemplaza la validación manual de cada gestor y método de autorización en un entorno descartable; esa revisión sigue siendo necesaria antes de una versión estable.
-- El proyecto todavía no incluye un archivo de licencia. No redistribuyas el código como si tuviera una licencia específica hasta que se añada una.
+- El proyecto usa licencia MIT; consulta [LICENSE](LICENSE).

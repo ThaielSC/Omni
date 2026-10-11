@@ -4,17 +4,20 @@ use std::process::{Command, Output};
 
 pub mod cargo;
 pub mod custom;
+pub mod custom_updates;
 pub mod flatpak;
+pub mod native_updates;
 pub mod pacman;
 pub mod pip;
 pub mod project;
+pub mod project_updates;
 pub mod uninstall;
 pub mod uv;
 pub mod yay;
 
 pub use uninstall::{
-    UninstallCommand, build_project_add_command, build_uninstall_command,
-    build_uninstall_command_with_projects, build_update_command,
+    UninstallCommand, build_project_add_command, build_project_update_command,
+    build_uninstall_command, build_uninstall_command_with_projects, build_update_command,
 };
 
 pub trait PackageManagerProvider: Send + Sync {

@@ -61,10 +61,13 @@ pub fn render(
         .unwrap_or_else(|| format!("{}  Size: {}  utf-8", sort.display_name(), size));
     let available = area.width as usize;
     let right_width = right.chars().count().min(available);
-    let left_width = (left.chars().count() + spinner.chars().count())
-        .min(available.saturating_sub(right_width));
+    let left_width =
+        (left.chars().count() + spinner.chars().count()).min(available.saturating_sub(right_width));
     let spinner_width = spinner.chars().count().min(left_width);
-    let mode_width = left.chars().count().min(left_width.saturating_sub(spinner_width));
+    let mode_width = left
+        .chars()
+        .count()
+        .min(left_width.saturating_sub(spinner_width));
     let middle_width = available.saturating_sub(left_width + right_width);
     let package_scope = if show_dependencies {
         "DEPS ON"

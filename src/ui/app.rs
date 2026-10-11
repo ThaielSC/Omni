@@ -26,14 +26,16 @@ use crate::config::{
 };
 use crate::model::{FilterTab, InstallReason, SortMode, UnifiedPackage};
 use crate::provider::{
-    PackageManagerProvider, build_project_add_command, build_uninstall_command_with_projects,
-    build_update_command,
+    PackageManagerProvider, build_project_add_command, build_project_update_command,
+    build_uninstall_command_with_projects, build_update_command,
     cargo::CargoProvider,
     custom::CustomManager,
     flatpak::FlatpakProvider,
+    native_updates::{UpdateCheckState, UpdateManager, discover_updates},
     pacman::PacmanProvider,
     pip::PipProvider,
     project::{ProjectContext, discover_projects},
+    project_updates::check_project_updates,
     uv::UvProvider,
     yay::YayProvider,
 };
@@ -607,9 +609,14 @@ impl App {
         self.checking_updates = true;
         let tx = self.reload_tx.clone();
         let packages = self.packages.clone();
+        let custom_configs = self.config.custom_managers.clone();
         let generation = self.inventory_generation;
         thread::spawn(move || {
-            let _ = tx.send(check_available_updates(generation, packages));
+            let _ = tx.send(check_available_updates(
+                generation,
+                packages,
+                custom_configs,
+            ));
         });
     }
 
@@ -877,7 +884,7 @@ impl App {
             self.set_notice("No package is selected");
             return;
         }
-        let mut updatable = targets
+        let updatable = targets
             .into_iter()
             .filter(|package| {
                 self.update_versions
@@ -888,42 +895,130 @@ impl App {
             self.set_notice("No available update for the selected package(s)");
             return;
         }
-        let skipped = if self.selected_packages.is_empty() {
-            0
+        let selected_count = if self.selected_packages.is_empty() {
+            1
         } else {
-            self.selected_packages.len().saturating_sub(updatable.len())
+            self.selected_packages.len()
         };
+        let skipped = selected_count.saturating_sub(updatable.len());
+        let mut groups: Vec<Vec<UnifiedPackage>> = Vec::new();
+        for package in updatable.iter().cloned() {
+            if let Some(group) = groups.iter_mut().find(|group| {
+                group.first().is_some_and(|first| {
+                    first.source == package.source && first.manager_id == package.manager_id
+                })
+            }) {
+                group.push(package);
+            } else {
+                groups.push(vec![package]);
+            }
+        }
         let mut commands = Vec::new();
-        for source in [
-            crate::model::PackageSource::Pacman,
-            crate::model::PackageSource::Aur,
-        ] {
-            let group = updatable
-                .iter()
-                .filter(|package| package.source == source)
-                .cloned()
-                .collect::<Vec<_>>();
-            if !group.is_empty() {
-                match build_update_command(&group, &self.config.behavior) {
-                    Ok(command) => commands.push(command),
+        let mut executable_targets = Vec::new();
+        for group in &groups {
+            let is_custom = group.first().is_some_and(|package| {
+                package.manager_id.as_deref().is_some_and(|id| {
+                    self.config
+                        .custom_managers
+                        .iter()
+                        .any(|manager| manager.id == id)
+                })
+            });
+            let group_commands = if is_custom {
+                let manager_id = group[0].manager_id.as_deref().unwrap_or_default();
+                let manager = self
+                    .config
+                    .custom_managers
+                    .iter()
+                    .find(|manager| manager.id == manager_id);
+                let Some(manager) = manager else {
+                    self.set_notice(format!("Custom manager '{manager_id}' is not configured"));
+                    return;
+                };
+                let mut built = Vec::new();
+                for package in group {
+                    let Some(latest) = self.update_versions.get(&package_identity(package)) else {
+                        continue;
+                    };
+                    match crate::provider::custom_updates::build_custom_update_command(
+                        manager,
+                        &package.name,
+                        &package.version,
+                        latest,
+                    ) {
+                        Ok(Some(command)) => {
+                            built.push(crate::provider::uninstall::UninstallCommand::custom_update(
+                                command.program,
+                                command.args,
+                                format!("{} {}", manager.name, package.name),
+                            ))
+                        }
+                        Ok(None) => {}
+                        Err(error) => {
+                            self.set_notice(error.to_string());
+                            return;
+                        }
+                    }
+                }
+                built
+            } else if group
+                .first()
+                .is_some_and(|package| package.source == crate::model::PackageSource::Project)
+            {
+                let first = &group[0];
+                let Some(manager_id) = first.manager_id.as_deref() else {
+                    self.set_notice("Project package is missing manager identity");
+                    return;
+                };
+                let Some((_, root)) = manager_id.split_once(":") else {
+                    self.set_notice("Invalid project manager identity");
+                    return;
+                };
+                let names = group
+                    .iter()
+                    .map(|package| package.name.clone())
+                    .collect::<Vec<_>>();
+                match build_project_update_command(
+                    manager_id,
+                    &PathBuf::from(root),
+                    &names,
+                    &self.config.manager.projects,
+                ) {
+                    Ok(command) => vec![command],
                     Err(error) => {
                         self.set_notice(error);
                         return;
                     }
                 }
+            } else {
+                match build_update_command(
+                    group,
+                    &self.config.behavior,
+                    &self.config.manager.projects,
+                ) {
+                    Ok(command) => vec![command],
+                    Err(error) => {
+                        self.set_notice(error);
+                        return;
+                    }
+                }
+            };
+            if !group_commands.is_empty() {
+                executable_targets.extend(group.iter().cloned());
+                commands.extend(group_commands);
             }
         }
         if commands.is_empty() {
-            self.set_notice("Updates are currently supported for Pacman and AUR only");
+            self.set_notice("No supported update command was produced for the selected manager");
             return;
         }
         if skipped > 0 {
             self.set_notice(format!(
-                "Updating {} package(s); {skipped} selected package(s) have no supported update",
-                updatable.len()
+                "Updating {} package(s); {skipped} selected package(s) have no available update or update command",
+                executable_targets.len()
             ));
         }
-        self.uninstall_targets = std::mem::take(&mut updatable);
+        self.uninstall_targets = executable_targets;
         self.uninstall_commands = commands;
         self.operation_kind = OperationKind::Update;
         self.selected_packages.clear();
@@ -1448,7 +1543,11 @@ fn scan_packages(
     (packages, errors, project_managers)
 }
 
-fn check_available_updates(generation: u64, packages: Vec<UnifiedPackage>) -> UiEvent {
+fn check_available_updates(
+    generation: u64,
+    packages: Vec<UnifiedPackage>,
+    custom_configs: Vec<crate::config::CustomManagerConfig>,
+) -> UiEvent {
     let mut updates = HashMap::new();
     let mut errors = Vec::new();
     for (binary, args, source) in [
@@ -1508,9 +1607,99 @@ fn check_available_updates(generation: u64, packages: Vec<UnifiedPackage>) -> Ui
                 continue;
             };
             if installed_names.contains(name) {
-                let key = (source, None, name.to_owned());
+                let manager_id = packages
+                    .iter()
+                    .find(|package| package.source == source && package.name == name)
+                    .and_then(|package| package.manager_id.clone());
+                let key = (source, manager_id, name.to_owned());
                 updates.insert(key, latest_version.to_owned());
             }
+        }
+    }
+
+    for report in discover_updates(&packages) {
+        match report.state {
+            UpdateCheckState::Failed(error) => {
+                errors.push(format!(
+                    "{} update check failed: {error}",
+                    report.manager.as_str()
+                ));
+            }
+            UpdateCheckState::Unavailable => {
+                if packages.iter().any(|package| {
+                    matches!(
+                        (report.manager, package.source),
+                        (UpdateManager::Flatpak, crate::model::PackageSource::Flatpak)
+                            | (UpdateManager::Uv, crate::model::PackageSource::Uv)
+                            | (UpdateManager::Pip, crate::model::PackageSource::Pip)
+                            | (UpdateManager::Cargo, crate::model::PackageSource::Cargo)
+                    )
+                }) {
+                    errors.push(format!(
+                        "{} is unavailable; updates were not checked",
+                        report.manager.as_str()
+                    ));
+                }
+            }
+            UpdateCheckState::Unsupported => {
+                if report.manager == UpdateManager::Cargo
+                    && packages
+                        .iter()
+                        .any(|package| package.source == crate::model::PackageSource::Cargo)
+                {
+                    errors.push("Install cargo-update to check global Cargo tools".to_owned());
+                }
+            }
+            UpdateCheckState::Checked => {}
+        }
+        for update in report.updates {
+            if let Some(package) = packages.iter().find(|package| {
+                package.source == update.manager.source()
+                    && package.name == update.package_name
+                    && package.manager_id.is_none()
+            }) {
+                updates.insert(package_identity(package), update.latest_version);
+            }
+        }
+    }
+
+    let project_updates = check_project_updates(&packages);
+    for (key, latest) in project_updates.updates {
+        if let Some(package) = packages.iter().find(|package| {
+            package.source == crate::model::PackageSource::Project
+                && package.manager_id.as_deref() == Some(key.manager_id.as_str())
+                && package.name == key.name
+        }) {
+            updates.insert(package_identity(package), latest);
+        }
+    }
+    errors.extend(
+        project_updates
+            .errors
+            .into_iter()
+            .map(|(manager, error)| format!("{manager} update check failed: {error}")),
+    );
+
+    for manager in custom_configs {
+        let manager_id = manager.id.clone();
+        let provider_config =
+            crate::provider::custom::CustomManager::from_configs(vec![manager.clone()])
+                .into_iter()
+                .next()
+                .expect("single configured manager")
+                .config;
+        match crate::provider::custom_updates::check_custom_manager_updates(&provider_config) {
+            Ok(found) => {
+                for update in found {
+                    if let Some(package) = packages.iter().find(|package| {
+                        package.manager_id.as_deref() == Some(manager_id.as_str())
+                            && package.name == update.package_name
+                    }) {
+                        updates.insert(package_identity(package), update.latest_version);
+                    }
+                }
+            }
+            Err(error) => errors.push(format!("{manager_id} update check failed: {error}")),
         }
     }
     UiEvent::Updates(generation, updates, errors)

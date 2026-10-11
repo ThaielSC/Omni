@@ -38,6 +38,10 @@ impl UninstallCommand {
         }
     }
 
+    pub fn custom_update(program: String, args: Vec<String>, display: String) -> Self {
+        Self::direct(program, args, display, None)
+    }
+
     /// Mark a command that delegates sudo authentication to a child process
     /// (for example, yay calling sudo internally) as consuming a password on
     /// stdin.
@@ -193,6 +197,67 @@ pub fn build_uninstall_command_with_projects(
     }
 }
 
+/// Query Pacman for orphaned dependency packages. This is read-only; removal is
+/// still initiated one package at a time through the normal confirmation flow.
+pub fn list_pacman_orphans() -> Result<Vec<String>, String> {
+    let output = Command::new("pacman")
+        .args(["-Qtdq"])
+        .output()
+        .map_err(|error| format!("could not start pacman orphan query: {error}"))?;
+    if !output.status.success() && output.status.code() != Some(1) {
+        return Err(format!(
+            "pacman orphan query failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ));
+    }
+    Ok(String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .map(str::to_owned)
+        .collect())
+}
+
+#[cfg(test)]
+mod update_command_tests {
+    use super::*;
+
+    #[test]
+    fn project_update_builds_manager_specific_safe_commands() {
+        let config = ProjectManagersConfig::default();
+        let names = vec!["serde".to_owned(), "tokio".to_owned()];
+        let cargo = build_project_update_command(
+            "project:cargo:/tmp/my-app",
+            std::path::Path::new("/tmp/my-app"),
+            &names,
+            &config,
+        )
+        .unwrap();
+        assert_eq!(cargo.program(), "cargo");
+        assert_eq!(cargo.args(), ["update", "-p", "serde", "-p", "tokio"]);
+        let npm = build_project_update_command(
+            "project:npm:/tmp/my-app",
+            std::path::Path::new("/tmp/my-app"),
+            &names[..1],
+            &config,
+        )
+        .unwrap();
+        assert_eq!(npm.args(), ["update", "serde"]);
+    }
+
+    #[test]
+    fn project_update_rejects_option_injection() {
+        let error = build_project_update_command(
+            "project:bun:/tmp/app",
+            std::path::Path::new("/tmp/app"),
+            &["--force".to_owned()],
+            &ProjectManagersConfig::default(),
+        )
+        .unwrap_err();
+        assert!(error.contains("must not begin"));
+    }
+}
+
 /// Build the project dependency-add operation using a direct argv (never a
 /// shell). It runs with the project root as its working directory.
 pub fn build_project_add_command(
@@ -209,6 +274,63 @@ pub fn build_project_add_command(
         ));
     }
     build_project_command(ecosystem, project_root, package_name, true, config)
+}
+
+/// Build project-local update commands. Cargo and Node package managers treat
+/// project updates as lockfile operations, so a selected package narrows Cargo
+/// with `-p` while npm/Bun update only the named direct dependency.
+pub fn build_project_update_command(
+    manager_id: &str,
+    project_root: &std::path::Path,
+    package_names: &[String],
+    config: &ProjectManagersConfig,
+) -> Result<UninstallCommand, String> {
+    let (ecosystem, _) = parse_project_manager_id(manager_id)
+        .ok_or_else(|| "Invalid project manager identity".to_owned())?;
+    if !config.supports(ecosystem) {
+        return Err(format!(
+            "Project manager '{ecosystem}' is disabled in config.toml"
+        ));
+    }
+    if package_names.is_empty() {
+        return Err("No project packages selected".into());
+    }
+    for name in package_names {
+        validate_value("project package name", name)?;
+        if name.starts_with('-')
+            || name.chars().any(char::is_whitespace)
+            || name.chars().any(char::is_control)
+        {
+            return Err("Package names must not begin with '-' or contain whitespace".into());
+        }
+    }
+    let (binary, mut args) = match ecosystem {
+        "cargo" => {
+            let mut args = vec!["update".to_owned()];
+            for name in package_names {
+                args.push("-p".into());
+                args.push(name.clone());
+            }
+            (config.cargo_binary.clone(), args)
+        }
+        "npm" => {
+            let mut args = vec!["update".to_owned()];
+            args.extend(package_names.iter().cloned());
+            (config.npm_binary.clone(), args)
+        }
+        "bun" => {
+            let mut args = vec!["update".to_owned()];
+            args.extend(package_names.iter().cloned());
+            (config.bun_binary.clone(), args)
+        }
+        _ => return Err(format!("Unsupported project package manager '{ecosystem}'")),
+    };
+    validate_value("package-manager executable", &binary)?;
+    let display = render_command(&binary, &args);
+    Ok(
+        UninstallCommand::direct(binary, std::mem::take(&mut args), display, None)
+            .in_directory(project_root.to_path_buf()),
+    )
 }
 
 fn build_project_command(
@@ -250,61 +372,137 @@ fn parse_project_manager_id(value: &str) -> Option<(&str, &std::path::Path)> {
 }
 
 /// Build one update command for a homogeneous group of packages already known
-/// to have an available update. Only Pacman and AUR update operations are
-/// currently supported.
+/// to have an available update.
 pub fn build_update_command(
     packages: &[UnifiedPackage],
     behavior: &BehaviorConfig,
+    projects: &ProjectManagersConfig,
 ) -> Result<UninstallCommand, String> {
     let first = packages.first().ok_or("No update targets selected")?;
     let names = packages
         .iter()
-        .map(|package| validate_value("package name", &package.name).map(str::to_owned))
+        .map(|package| {
+            let name = validate_value("package name", &package.name)?;
+            if name.starts_with('-')
+                || name.chars().any(char::is_whitespace)
+                || name.chars().any(char::is_control)
+            {
+                return Err(String::from(
+                    "Package names must not begin with '-' or contain whitespace",
+                ));
+            }
+            Ok(name.to_owned())
+        })
         .collect::<Result<Vec<_>, _>>()?;
-    let mut args = match first.source {
-        PackageSource::Pacman => vec![
-            // Arch does not support partial upgrades; a repository update must
-            // use -Syu even when the user explicitly selected package targets.
-            "-Syu".to_owned(),
-            "--needed".to_owned(),
-            "--noconfirm".to_owned(),
-            "--".to_owned(),
-        ],
-        PackageSource::Aur => vec![
-            "-S".to_owned(),
-            "--aur".to_owned(),
-            "--needed".to_owned(),
-            "--noconfirm".to_owned(),
-            "--sudoflags".to_owned(),
-            "-S".to_owned(),
-            "--".to_owned(),
-        ],
-        _ => {
-            return Err(format!(
-                "Updates are not supported for {} packages",
-                first.source
-            ));
-        }
-    };
     if packages
         .iter()
-        .any(|package| package.source != first.source)
+        .any(|package| package.source != first.source || package.manager_id != first.manager_id)
     {
-        return Err("Update commands must contain packages from one manager".to_owned());
+        return Err("Update commands must contain packages from one manager instance".to_owned());
     }
-    args.extend(names.iter().cloned());
-    let binary = match first.source {
-        PackageSource::Pacman => "pacman",
-        PackageSource::Aur => "yay",
-        _ => unreachable!(),
+    let (binary, mut args, cwd) = match first.source {
+        PackageSource::Pacman => (
+            "pacman".to_owned(),
+            vec![
+                // Arch does not support partial upgrades; a repository update must
+                // use -Syu even when the user explicitly selected package targets.
+                "-Syu".to_owned(),
+                "--needed".to_owned(),
+                "--noconfirm".to_owned(),
+                "--".to_owned(),
+            ],
+            None,
+        ),
+        PackageSource::Aur => (
+            "yay".to_owned(),
+            vec![
+                "-S".to_owned(),
+                "--aur".to_owned(),
+                "--needed".to_owned(),
+                "--noconfirm".to_owned(),
+                "--sudoflags".to_owned(),
+                "-S".to_owned(),
+                "--".to_owned(),
+            ],
+            None,
+        ),
+        PackageSource::Flatpak => (
+            "flatpak".to_owned(),
+            vec![
+                "update".into(),
+                "--noninteractive".into(),
+                "--assumeyes".into(),
+            ],
+            None,
+        ),
+        PackageSource::Cargo => (
+            "cargo".to_owned(),
+            vec!["install".into(), "--force".into()],
+            None,
+        ),
+        PackageSource::Uv => ("uv".to_owned(), vec!["tool".into(), "upgrade".into()], None),
+        PackageSource::Pip => (
+            "pip".to_owned(),
+            vec!["install".into(), "--upgrade".into()],
+            None,
+        ),
+        PackageSource::Project => {
+            let manager_id = first
+                .manager_id
+                .as_deref()
+                .ok_or("Project package is missing manager identity")?;
+            let (ecosystem, root) =
+                parse_project_manager_id(manager_id).ok_or("Invalid project manager identity")?;
+            if !projects.supports(ecosystem) {
+                return Err(format!(
+                    "Project manager '{ecosystem}' is disabled in config.toml"
+                ));
+            }
+            let (binary, args) = match ecosystem {
+                // Cargo's `update -p` uses the package name, and is the actual
+                // lockfile mutation corresponding to the dry-run discovery.
+                "cargo" => (projects.cargo_binary.clone(), {
+                    let mut args = vec!["update".to_owned()];
+                    for name in &names {
+                        args.push("-p".to_owned());
+                        args.push(name.clone());
+                    }
+                    args
+                }),
+                // npm update accepts explicit package names and updates the
+                // lockfile within declared semver ranges.
+                "npm" => (projects.npm_binary.clone(), {
+                    let mut args = vec!["update".to_owned()];
+                    args.extend(names.clone());
+                    args
+                }),
+                // Bun uses `bun update <package...>`.
+                "bun" => (projects.bun_binary.clone(), {
+                    let mut args = vec!["update".to_owned()];
+                    args.extend(names.clone());
+                    args
+                }),
+                _ => return Err(format!("Unsupported project manager '{ecosystem}'")),
+            };
+            (binary, args, Some(root.to_path_buf()))
+        }
     };
-    let display = render_command(binary, &args);
+    if first.source != PackageSource::Project {
+        args.extend(names);
+    }
+    let display = render_command(&binary, &args);
     if first.source == PackageSource::Pacman {
         let (program, args, display, sudo_index) =
-            privileged_command(binary, args, behavior, true)?;
+            privileged_command(&binary, args, behavior, true)?;
         Ok(UninstallCommand::direct(program, args, display, sudo_index))
-    } else {
+    } else if first.source == PackageSource::Aur {
         Ok(UninstallCommand::direct(binary, args, display, None).with_stdin_password())
+    } else {
+        let command = UninstallCommand::direct(binary, args, display, None);
+        Ok(match cwd {
+            Some(directory) => command.in_directory(directory),
+            None => command,
+        })
     }
 }
 
@@ -541,6 +739,13 @@ mod tests {
             info_cmd: None,
             uninstall_cmd: "npm uninstall {name}".into(),
             need_sudo: false,
+            update_check_cmd: None,
+            update_format: None,
+            update_parse_regex: None,
+            update_json_array_path: None,
+            update_json_name: None,
+            update_json_latest_version: None,
+            update_cmd: None,
         }
     }
 }
