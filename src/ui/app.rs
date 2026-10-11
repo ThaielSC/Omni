@@ -2730,7 +2730,8 @@ fn truncate(value: &str, width: usize) -> String {
 #[cfg(test)]
 mod uninstall_ui_tests {
     use super::{
-        App, dependency_package_name, is_no_updates_exit, render, wait_for_clipboard_child,
+        App, Focus, OperationKind, UiEvent, UninstallConsole, dependency_package_name,
+        is_no_updates_exit, render, wait_for_clipboard_child,
     };
     use crate::config::OmniConfig;
     use ratatui::{Terminal, backend::TestBackend};
@@ -2750,6 +2751,30 @@ mod uninstall_ui_tests {
         assert!(!is_no_updates_exit("yay", Some(1), b"diagnostic", b""));
         assert!(!is_no_updates_exit("yay", Some(1), b"", b"network error"));
         assert!(is_no_updates_exit("checkupdates", Some(2), b"", b""));
+    }
+
+    #[test]
+    fn completed_operation_refreshes_inventory_and_keeps_console_visible() {
+        let (tx, _rx) = mpsc::channel();
+        let mut app = App::new(OmniConfig::default(), tx);
+        app.loading = true;
+        app.focus = Focus::Details;
+        app.uninstall_console = Some(UninstallConsole {
+            operation: OperationKind::Uninstall,
+            package: "example-python-package".into(),
+            lines: vec!["$ pip uninstall -y example-python-package".into()],
+            running: true,
+            exit_code: None,
+        });
+
+        app.apply_ui_event(UiEvent::OperationFinished(Some(0)));
+
+        let console = app.uninstall_console.as_ref().unwrap();
+        assert!(!console.running);
+        assert_eq!(console.exit_code, Some(0));
+        assert!(console.lines.last().unwrap().contains("successfully"));
+        assert!(app.reload_after_loading);
+        assert_eq!(app.focus, Focus::Details);
     }
 
     #[cfg(unix)]
