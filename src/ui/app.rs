@@ -533,6 +533,16 @@ impl App {
                 self.selected_packages.clear();
                 self.set_notice(format!("Cleared selection ({cleared})"));
             }
+            Some(Action::CopyPackageName) => {
+                let Some(name) = self.selected_package().map(|package| package.name.clone()) else {
+                    self.set_notice("No package selected");
+                    return false;
+                };
+                match copy_to_system_clipboard(&name) {
+                    Ok(()) => self.set_notice(format!("Copied package name: {name}")),
+                    Err(error) => self.set_notice(error),
+                }
+            }
             Some(Action::GotoAll) => self.select_tab(FilterTab::All),
             Some(Action::GotoPacman) => self.select_tab(FilterTab::Pacman),
             Some(Action::GotoAur) => self.select_tab(FilterTab::Aur),
@@ -610,12 +620,14 @@ impl App {
         let tx = self.reload_tx.clone();
         let packages = self.packages.clone();
         let custom_configs = self.config.custom_managers.clone();
+        let project_config = self.config.manager.projects.clone();
         let generation = self.inventory_generation;
         thread::spawn(move || {
             let _ = tx.send(check_available_updates(
                 generation,
                 packages,
                 custom_configs,
+                project_config,
             ));
         });
     }
@@ -1547,6 +1559,7 @@ fn check_available_updates(
     generation: u64,
     packages: Vec<UnifiedPackage>,
     custom_configs: Vec<crate::config::CustomManagerConfig>,
+    project_config: ProjectManagersConfig,
 ) -> UiEvent {
     let mut updates = HashMap::new();
     let mut errors = Vec::new();
@@ -1663,7 +1676,7 @@ fn check_available_updates(
         }
     }
 
-    let project_updates = check_project_updates(&packages);
+    let project_updates = check_project_updates(&packages, &project_config);
     for (key, latest) in project_updates.updates {
         if let Some(package) = packages.iter().find(|package| {
             package.source == crate::model::PackageSource::Project
@@ -1703,6 +1716,54 @@ fn check_available_updates(
         }
     }
     UiEvent::Updates(generation, updates, errors)
+}
+
+fn copy_to_system_clipboard(text: &str) -> Result<(), String> {
+    let helpers: [(&str, &[&str]); 3] = [
+        ("wl-copy", &[]),
+        ("xclip", &["-selection", "clipboard"]),
+        ("xsel", &["--clipboard", "--input"]),
+    ];
+    let mut last_error = None;
+    for (binary, args) in helpers {
+        let child = std::process::Command::new(binary)
+            .args(args)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::piped())
+            .spawn();
+        let mut child = match child {
+            Ok(child) => child,
+            Err(error) if error.kind() == io::ErrorKind::NotFound => continue,
+            Err(error) => {
+                last_error = Some(format!("Could not start {binary}: {error}"));
+                continue;
+            }
+        };
+        if let Some(mut stdin) = child.stdin.take()
+            && let Err(error) = stdin.write_all(text.as_bytes())
+        {
+            last_error = Some(format!("Could not write package name to {binary}: {error}"));
+            let _ = child.kill();
+            let _ = child.wait();
+            continue;
+        }
+        match child.wait_with_output() {
+            Ok(output) if output.status.success() => return Ok(()),
+            Ok(output) => {
+                let message = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+                last_error = Some(if message.is_empty() {
+                    format!("{binary} exited with {}", output.status)
+                } else {
+                    format!("{binary}: {message}")
+                });
+            }
+            Err(error) => last_error = Some(format!("Could not finish {binary}: {error}")),
+        }
+    }
+    Err(last_error.unwrap_or_else(|| {
+        "No clipboard helper found; install wl-clipboard, xclip, or xsel".to_owned()
+    }))
 }
 
 fn render(frame: &mut Frame, app: &App) {
@@ -1800,6 +1861,11 @@ fn render(frame: &mut Frame, app: &App) {
                 .keymap
                 .get_bindings(Action::AddProjectPackage)
                 .format_summary();
+            let copy_package_name_key = app
+                .config
+                .keymap
+                .get_bindings(Action::CopyPackageName)
+                .format_summary();
             help::render(
                 frame,
                 frame.area(),
@@ -1812,6 +1878,7 @@ fn render(frame: &mut Frame, app: &App) {
                 &clear_selection_key,
                 &update_packages_key,
                 &add_project_key,
+                &copy_package_name_key,
                 &app.help_filter,
                 app.help_filtering,
             )
@@ -2569,13 +2636,32 @@ fn truncate(value: &str, width: usize) -> String {
 
 #[cfg(test)]
 mod uninstall_ui_tests {
-    use super::dependency_package_name;
+    use super::{App, dependency_package_name, render};
+    use crate::config::OmniConfig;
+    use ratatui::{Terminal, backend::TestBackend};
+    use std::sync::mpsc;
 
     #[test]
     fn resolves_version_constrained_dependency_names() {
         assert_eq!(dependency_package_name("glibc>=2.38"), "glibc");
         assert_eq!(dependency_package_name("openssl < 4"), "openssl");
         assert_eq!(dependency_package_name("zlib"), "zlib");
+    }
+
+    #[test]
+    fn renders_without_panicking_in_narrow_and_short_terminals() {
+        for border_style in ["none", "vertical", "rounded", "plain", "thick", "double"] {
+            for (width, height) in [(1, 1), (2, 2), (5, 3), (16, 6), (32, 10), (80, 24)] {
+                let (tx, _rx) = mpsc::channel();
+                let mut config = OmniConfig::default();
+                config.layout.border_style = border_style.to_owned();
+                let mut app = App::new(config, tx);
+                app.loading = false;
+                let backend = TestBackend::new(width, height);
+                let mut terminal = Terminal::new(backend).unwrap();
+                terminal.draw(|frame| render(frame, &app)).unwrap();
+            }
+        }
     }
 }
 
