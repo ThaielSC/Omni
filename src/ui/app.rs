@@ -81,7 +81,10 @@ enum UiEvent {
     Packages((Vec<UnifiedPackage>, Vec<String>, Vec<ProjectContext>)),
     OperationOutput(String),
     OperationFinished(Option<i32>),
-    ClipboardResult(String, Result<(), String>),
+    ClipboardResult {
+        notice: String,
+        result: Result<(), String>,
+    },
     Updates(u64, HashMap<PackageIdentity, String>, Vec<String>),
 }
 
@@ -543,7 +546,28 @@ impl App {
                 let tx = self.reload_tx.clone();
                 thread::spawn(move || {
                     let result = copy_to_system_clipboard(&name);
-                    let _ = tx.send(UiEvent::ClipboardResult(name, result));
+                    let _ = tx.send(UiEvent::ClipboardResult {
+                        notice: format!("Copied package name: {name}"),
+                        result,
+                    });
+                });
+            }
+            Some(Action::CopyDetails) => {
+                if self.focus != Focus::Details {
+                    self.set_notice("Focus the Details panel to copy its contents");
+                    return false;
+                }
+                let Some(contents) = details_clipboard_text(self) else {
+                    self.set_notice("No Details content to copy");
+                    return false;
+                };
+                let tx = self.reload_tx.clone();
+                thread::spawn(move || {
+                    let result = copy_to_system_clipboard(&contents);
+                    let _ = tx.send(UiEvent::ClipboardResult {
+                        notice: "Copied Details panel contents".to_owned(),
+                        result,
+                    });
                 });
             }
             Some(Action::GotoAll) => self.select_tab(FilterTab::All),
@@ -1247,8 +1271,8 @@ impl App {
                     self.console_scroll = usize::MAX;
                 }
             }
-            UiEvent::ClipboardResult(name, result) => match result {
-                Ok(()) => self.set_notice(format!("Copied package name: {name}")),
+            UiEvent::ClipboardResult { notice, result } => match result {
+                Ok(()) => self.set_notice(notice),
                 Err(error) => self.set_error_notice(format!("Clipboard copy failed: {error}")),
             },
             UiEvent::OperationFinished(code) => {
@@ -1959,6 +1983,11 @@ fn render(frame: &mut Frame, app: &App) {
                 .keymap
                 .get_bindings(Action::CopyPackageName)
                 .format_summary();
+            let copy_details_key = app
+                .config
+                .keymap
+                .get_bindings(Action::CopyDetails)
+                .format_summary();
             help::render(
                 frame,
                 frame.area(),
@@ -1972,6 +2001,7 @@ fn render(frame: &mut Frame, app: &App) {
                 &update_packages_key,
                 &add_project_key,
                 &copy_package_name_key,
+                &copy_details_key,
                 &app.help_filter,
                 app.help_filtering,
             )
@@ -2488,6 +2518,94 @@ fn detail_line(label: &str, value: &str, theme: &ThemeColors) -> Line<'static> {
     ])
 }
 
+/// Builds a plain-text equivalent of the content currently shown in Details,
+/// excluding the panel border and terminal styling.
+fn details_clipboard_text(app: &App) -> Option<String> {
+    if let Some(console) = app.uninstall_console.as_ref() {
+        let state = if console.running {
+            "running"
+        } else if console.exit_code == Some(0) {
+            "success"
+        } else {
+            "failed"
+        };
+        let mut lines = vec![format!(
+            "{} · {} · {}",
+            console.operation.label(),
+            console.package,
+            state
+        )];
+        lines.extend(console.lines.iter().cloned());
+        return Some(lines.join("\n"));
+    }
+
+    let package = app.selected_detail_package()?;
+    let mut lines = vec![
+        format!("{} {}", package.name, package.version),
+        String::new(),
+    ];
+    let mut add_detail = |label: &str, value: &str| {
+        lines.push(format!("{label:<13}{value}"));
+    };
+    add_detail("Source", &package.source.to_string());
+    add_detail(
+        "Install type",
+        &format!("{:?}", package.install_reason).to_lowercase(),
+    );
+    add_detail(
+        "Size",
+        &package
+            .size_bytes
+            .map(|bytes| format_bytes(Some(bytes)))
+            .unwrap_or_else(|| "Unknown".into()),
+    );
+    if app.focus == Focus::PackageDependencies {
+        add_detail("Dependency", app.selected_dependency_name().unwrap_or(""));
+    }
+    if let Some(date) = &package.install_date {
+        add_detail("Installed", date);
+    }
+    if let Some(project_id) = package.manager_id.as_deref()
+        && let Some((_, root)) = project_id
+            .strip_prefix("project:")
+            .and_then(|rest| rest.split_once(':'))
+    {
+        add_detail("Project", root);
+    }
+    if let Some(latest) = &package.latest_version {
+        add_detail("Available", latest);
+    }
+    if let Some(license) = &package.license {
+        add_detail("License", license);
+    }
+    if let Some(url) = &package.url {
+        add_detail("URL", url);
+    }
+    if !package.binaries.is_empty() {
+        lines.extend([String::new(), "Binaries".into()]);
+        lines.extend(package.binaries.iter().map(|value| format!("  {value}")));
+    }
+    if let Some(description) = &package.description {
+        lines.extend([String::new(), "Description".into()]);
+        lines.extend(description.lines().map(str::to_owned));
+    }
+    if !package.dependencies.is_empty() && !app.show_package_dependencies {
+        lines.extend([String::new(), "Dependencies".into()]);
+        lines.extend(package.dependencies.iter().map(|dep| format!("  {dep}")));
+    }
+    if !package.files.is_empty() {
+        lines.extend([String::new(), "Files".into()]);
+        lines.extend(
+            package
+                .files
+                .iter()
+                .take(30)
+                .map(|path| format!("  {path}")),
+        );
+    }
+    Some(lines.join("\n"))
+}
+
 fn render_uninstall_console(
     frame: &mut Frame,
     area: Rect,
@@ -2731,9 +2849,10 @@ fn truncate(value: &str, width: usize) -> String {
 mod uninstall_ui_tests {
     use super::{
         App, Focus, OperationKind, UiEvent, UninstallConsole, dependency_package_name,
-        is_no_updates_exit, render, wait_for_clipboard_child,
+        details_clipboard_text, is_no_updates_exit, render, wait_for_clipboard_child,
     };
     use crate::config::OmniConfig;
+    use crate::model::{PackageSource, UnifiedPackage};
     use ratatui::{Terminal, backend::TestBackend};
     use std::sync::mpsc;
 
@@ -2775,6 +2894,41 @@ mod uninstall_ui_tests {
         assert!(console.lines.last().unwrap().contains("successfully"));
         assert!(app.reload_after_loading);
         assert_eq!(app.focus, Focus::Details);
+    }
+
+    #[test]
+    fn details_clipboard_copies_the_visible_package_details() {
+        let (tx, _rx) = mpsc::channel();
+        let mut app = App::new(OmniConfig::default(), tx);
+        let mut package = UnifiedPackage::new("demo", "1.2.3", PackageSource::Pip);
+        package.description = Some("Example package description".into());
+        package.dependencies = vec!["idna".into()];
+        app.packages.push(package);
+        app.filtered.push(0);
+
+        let text = details_clipboard_text(&app).unwrap();
+        assert!(text.starts_with("demo 1.2.3\n"));
+        assert!(text.contains("Source") && text.contains("pip"));
+        assert!(text.contains("Description\nExample package description"));
+        assert!(text.contains("Dependencies\n  idna"));
+    }
+
+    #[test]
+    fn details_clipboard_copies_operation_console_instead_of_package_metadata() {
+        let (tx, _rx) = mpsc::channel();
+        let mut app = App::new(OmniConfig::default(), tx);
+        app.uninstall_console = Some(UninstallConsole {
+            operation: OperationKind::Uninstall,
+            package: "demo".into(),
+            lines: vec!["$ pip uninstall demo".into(), "Successfully removed".into()],
+            running: false,
+            exit_code: Some(0),
+        });
+        let text = details_clipboard_text(&app).unwrap();
+        assert_eq!(
+            text,
+            "UNINSTALL · demo · success\n$ pip uninstall demo\nSuccessfully removed"
+        );
     }
 
     #[cfg(unix)]

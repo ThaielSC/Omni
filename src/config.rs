@@ -590,6 +590,7 @@ pub enum Action {
     TogglePackageSelection,
     ClearPackageSelection,
     CopyPackageName,
+    CopyDetails,
 
     // Operations
     Uninstall,
@@ -925,6 +926,7 @@ pub struct KeymapConfig {
     pub toggle_package_selection: KeyBindings,
     pub clear_package_selection: KeyBindings,
     pub copy_package_name: KeyBindings,
+    pub copy_details: KeyBindings,
     pub uninstall: KeyBindings,
     pub update_packages: KeyBindings,
     pub add_project_package: KeyBindings,
@@ -963,6 +965,7 @@ impl Default for KeymapConfig {
             toggle_package_selection: KeyBindings::new([" "]),
             clear_package_selection: KeyBindings::new([","]),
             copy_package_name: KeyBindings::new(["c"]),
+            copy_details: KeyBindings::new(["C"]),
             uninstall: KeyBindings::new(["d", "x"]),
             update_packages: KeyBindings::new(["U"]),
             add_project_package: KeyBindings::new(["a"]),
@@ -997,6 +1000,7 @@ impl KeymapConfig {
             ),
             (Action::ClearPackageSelection, &self.clear_package_selection),
             (Action::CopyPackageName, &self.copy_package_name),
+            (Action::CopyDetails, &self.copy_details),
             (Action::GotoAll, &self.goto_all),
             (Action::GotoPacman, &self.goto_pacman),
             (Action::GotoAur, &self.goto_aur),
@@ -1061,6 +1065,7 @@ impl KeymapConfig {
             Action::TogglePackageSelection => &self.toggle_package_selection,
             Action::ClearPackageSelection => &self.clear_package_selection,
             Action::CopyPackageName => &self.copy_package_name,
+            Action::CopyDetails => &self.copy_details,
             Action::Uninstall => &self.uninstall,
             Action::UpdatePackages => &self.update_packages,
             Action::AddProjectPackage => &self.add_project_package,
@@ -1577,6 +1582,12 @@ mod tests {
         assert_eq!(
             keymap.resolve_action(&event_copy),
             Some(Action::CopyPackageName)
+        );
+
+        let event_copy_details = KeyEvent::new(KeyCode::Char('C'), KeyModifiers::SHIFT);
+        assert_eq!(
+            keymap.resolve_action(&event_copy_details),
+            Some(Action::CopyDetails)
         );
 
         let event_x = KeyEvent::new(KeyCode::Char('x'), KeyModifiers::NONE);

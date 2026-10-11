@@ -130,4 +130,8 @@ Para ver el estado de GitButler:
 ```bash
 but status
 ```
-EOF
+
+# Atajos y acciones de portapapeles
+
+`c` copia el nombre del paquete seleccionado y `C` copia el texto mostrado en Details. El segundo requiere que Details tenga el foco; copia metadatos del paquete o la salida completa de la consola de una operación, según lo que esté visible. Ambas acciones usan los helpers del portapapeles en segundo plano y tienen timeout.
+
