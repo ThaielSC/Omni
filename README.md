@@ -11,7 +11,7 @@ Omni es una aplicación de terminal escrita en Rust para consultar y gestionar p
 - [Requisitos](#requisitos)
 - [Instalación y ejecución](#instalación-y-ejecución)
 - [Atajos](#atajos)
-- [Comprobación de actualizaciones](#comprobación-de-actualizaciones)
+- [Comprobación y actualización de paquetes](#comprobación-y-actualización-de-paquetes)
 - [Selección y desinstalación](#selección-y-desinstalación)
 - [Configuración](#configuración)
 - [Gestores personalizados](#gestores-personalizados)
@@ -26,7 +26,7 @@ Omni es una aplicación de terminal escrita en Rust para consultar y gestionar p
 - Omite de forma predeterminada los paquetes que el proveedor identifica como dependencias; se pueden incluir bajo demanda.
 - Filtrado por nombre o descripción, orden por nombre, tamaño o fecha, y panel de detalles.
 - Vista de dependencias del paquete seleccionado cuando el proveedor dispone de esos datos.
-- Comprobación de actualizaciones bajo demanda, sin exploración automática durante el inicio.
+- Comprobación automática de actualizaciones en segundo plano tras mostrar el inventario inicial, además de consulta manual cuando se necesite.
 - Selección múltiple y desinstalación con revisión previa de los paquetes y comandos.
 - Salida de los procesos de desinstalación visible en el panel de detalles.
 - Personalización de paneles, separadores, colores, ventanas emergentes y atajos mediante TOML, con recarga en vivo.
