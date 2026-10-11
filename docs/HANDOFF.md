@@ -50,24 +50,25 @@ Revisa estos archivos para especificaciones exhaustivas:
 El usuario gestiona el repositorio con **GitButler** (`but`).
 ⚠️ **REGLA CRÍTICA**: **NUNCA ejecutes `git add`, `git commit` o `git checkout`**. Todas las operaciones de control de versiones deben hacerse exclusivamente con el binario **`but`**.
 
-### Ramas Virtuales Apiladas (Stack actual en `but status`):
+### Ramas Virtuales Apiladas (Stack de trabajo en GitButler):
 ```text
-╭┄ at [feat/e2e-test-suite]       <-- (Tope del stack: 96 pruebas E2E)
-┊●   ovt test(config): add isolated configuration module unit test
-┊●   mln test: add comprehensive 96-case E2E test suite and fixtures
+╭┄ at [feat/tui]                   <-- (TUI + personalización visual)
+┊●   feat(ui): add customizable three-pane Ratatui interface
 ┊│
-┊├┄ mo [feat/models-config]        <-- (Milestone 1 implementado)
-┊●   zqw feat(core): implement models, byte formatter, and TOML configuration
+┊├┄ pr [feat/providers-import]     <-- (Providers, CLI y clasificación de instalación)
+┊●   feat(providers): classify package installation reasons
+┊●   feat(cli): expose package inventory as JSON and text
+┊●   feat(providers): implement native and custom package providers
 ┊│
-┊├┄ do [feat/docs]                 <-- (Base del stack: Especificaciones y docs)
-┊●   vqm docs: add comprehensive README with architecture, specs, and usage
-┊●   ksq docs(versioning): add SemVer criteria and release tagging policy
-┊●   pzk docs: add comprehensive specifications, roadmap, and UI/UX design
+┊├┄ te [feat/e2e-test-suite]
+┊├┄ mo [feat/models-config]
+┊└┄ do [feat/docs]
 ├╯
 ┴ 8289bf3 (common base) first commit
 ```
 
-- **Tag actual de Git**: `v0.1.0-alpha.1` (sobre Milestone 1).
+- **Último tag publicado**: `v0.1.0-alpha.2` (backend y CLI de proveedores).
+- **Estado actual**: providers/CLI y primera TUI están registrados en el stack virtual. La desinstalación sigue deshabilitada; cambios locales restantes están en `src/utils/format.rs` y `tests/m1_challenger_test.rs` y deben revisarse antes de asignarlos.
 
 ---
 
@@ -82,40 +83,19 @@ El usuario gestiona el repositorio con **GitButler** (`but`).
 
 ---
 
-### ⏳ Lo que falta para la Versión Alpha Funcional:
+### ✅ Milestones implementados
 
-#### Paso 1: Implementar los Proveedores (Milestone 2 - `feat/providers`)
-Crear el trait `PackageManagerProvider` en `src/provider/mod.rs` e implementar los adaptadores:
-1. `src/provider/pacman.rs`: Ejecuta `pacman -Qi` o lee base de datos local para paquetes de sistema.
-2. `src/provider/yay.rs`: Detecta paquetes foráneos de AUR con `pacman -Qm` o `yay -Qm`.
-3. `src/provider/flatpak.rs`: Ejecuta `flatpak list --app --columns=application,name,version,size`.
-4. `src/provider/cargo.rs`: Lee `~/.cargo/.crates2.json` o `cargo install --list`.
-5. `src/provider/uv.rs`: Ejecuta `uv tool list`.
-6. `src/provider/pip.rs`: Ejecuta `pip list --format=json`.
-7. `src/provider/custom.rs`: Carga y parsea gestores dinámicos desde `~/.config/omni/managers.toml` según [`docs/MANAGERS_SPEC.md`](docs/MANAGERS_SPEC.md).
+- **Milestone 1 — Core/config**: modelos, configuración TOML, formato de tamaños y fixtures de tests.
+- **Milestone 2 — Providers/CLI**: pacman, AUR, Flatpak, Cargo, uv, pip y managers personalizados; CLI de texto/JSON.
+- **Milestone 3 — Primera TUI**: `src/ui/` ofrece tres paneles, navegación Vim, búsqueda, ordenamiento, detalles, recarga, ayuda `?` y statusline. El arranque sin flags abre la TUI; `--list` mantiene el modo CLI.
+- **Filtro de dependencias**: `e` alterna `DEPS OFF/ON`; por defecto se ocultan solo dependencias detectadas con fiabilidad. Los paquetes `Unknown` se conservan.
+- **Decoración visual**: `border_style` admite `none`, `vertical`, `rounded`, `plain`, `thick` y `double`; el tema Gruvbox separa paneles por fondo con `none` como valor por defecto.
 
-> **Al terminar**: Commitear y apilar la rama con:
-> ```bash
-> but commit -b feat/providers -m "feat(providers): implement native and custom package providers" <ids...>
-> but move feat/providers --above feat/e2e-test-suite
-> git tag -a v0.1.0-alpha.2 -m "v0.1.0-alpha.2: Milestone 2 completed"
-> ```
+### ⏳ Trabajo pendiente para una beta sólida
 
-#### Paso 2: Implementar la TUI en Ratatui (Milestone 3 - `feat/tui`)
-Usar `ratatui` + `crossterm` + `tokio`:
-1. `src/ui/layout.rs`: División de pantalla en 3 columnas verticales con proporciones configurables (`ratio = [1, 2, 3]`).
-2. `src/ui/app.rs`: Bucle de eventos, navegación `h/j/k/l`, filtro en tiempo real.
-3. `src/ui/statusline.rs`: Barra de estado inferior con badges `NOR`, `/SEARCH`, `DEL?`.
-4. `src/ui/help.rs`: Modal flotante activable con `?`.
-5. `src/ui/modal.rs`: Confirmación de desinstalación previa a ejecutar comandos destructivos.
-6. `src/main.rs`: Conectar la carga asíncrona de proveedores con la interfaz de Ratatui.
-
-> **Al terminar**: Commitear y apilar con:
-> ```bash
-> but commit -b feat/tui -m "feat(ui): implement 3-column Vim/Helix layout, statusline, and help modal" <ids...>
-> but move feat/tui --above feat/providers
-> git tag -a v0.1.0-beta.1 -m "v0.1.0-beta.1: Milestone 3 completed - Functional TUI Alpha"
-> ```
+- La desinstalación todavía no está conectada: `d` / `x` muestra un aviso y no modifica el sistema.
+- Revisar casos de terminal estrecha, mensajes de error por proveedor y accesibilidad de los paquetes sin metadatos.
+- Actualizar pruebas y documentación según avance la interfaz. No etiquetar una nueva versión hasta cerrar los criterios de [`docs/VERSIONING.md`](docs/VERSIONING.md).
 
 ---
 

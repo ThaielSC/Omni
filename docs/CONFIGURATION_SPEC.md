@@ -23,8 +23,10 @@ ratio = [ 1, 2, 3 ]
 show_managers = true
 show_details  = true
 
-# Estilo de los bordes entre paneles: "rounded", "plain", "thick", "double", "none"
-border_style = "rounded"
+# Decoración de paneles: marco completo o divisores discretos.
+# Opciones: "rounded", "plain", "thick", "double", "vertical", "none"
+# El valor predeterminado usa fondos distintos y no dibuja líneas.
+border_style = "none"
 
 # Relleno interno y espacios de las celdas
 padding = 1
@@ -49,6 +51,11 @@ bg             = "#282828"
 fg             = "#d4be98"
 border         = "#5a524c"
 border_focused = "#d8a657"   # Borde amarillo cálido para la columna con el foco actual
+
+# Fondos individuales para distinguir paneles cuando border_style = "none"
+panel_managers_bg = "#2e2b2a"
+panel_packages_bg = "#282828"
+panel_details_bg  = "#32302f"
 
 # Franja de selección activa
 selection_bg   = "#45403d"
