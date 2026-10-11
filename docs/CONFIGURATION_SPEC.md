@@ -132,6 +132,8 @@ sort_toggle  = "s"            # Alterna Size ▼ / Name ▲ / Date
 
 # --- Acciones ---
 uninstall    = [ "d", "x" ]   # Abre confirmación de desinstalación
+update_packages = "U"         # Actualiza seleccionados o el paquete bajo el cursor
+add_project_package = "a"      # Añade dependencia en la categoría de proyecto activa
 reload       = "r"            # Rescan de paquetes en segundo plano
 help         = "?"            # Abre modal de ayuda
 quit         = [ "q", "<C-c>" ]
@@ -156,3 +158,37 @@ sudo_command = "sudo"         # Omni prompts in its bottom status row and sends 
 # Carga en segundo plano de tamaños profundos
 preload_disk_sizes = true
 ```
+
+---
+
+## 5. Gestores de proyectos (`[manager.projects]`)
+
+Al iniciar Omni desde un proyecto, puede aparecer una categoría local para sus dependencias directas. Se detecta el proyecto a partir de sus manifiestos y el gestor se identifica en la lista como `<nombre-de-carpeta>[Cargo]`, `<nombre-de-carpeta>[npm]` o `<nombre-de-carpeta>[bun]`. Esta integración es distinta de los proveedores globales: las operaciones modifican el manifiesto y el lockfile del proyecto detectado.
+
+La configuración reside en `config.toml` y se recarga en vivo:
+
+```toml
+[manager.projects]
+enabled = true
+detect_ancestors = true
+cargo = true
+npm = true
+bun = true
+cargo_binary = "cargo"
+npm_binary = "npm"
+bun_binary = "bun"
+```
+
+Los booleanos son `true` por defecto. `enabled = false` desactiva la detección; `detect_ancestors = false` limita la búsqueda al directorio actual. Cada opción individual permite excluir un ecosistema. Los campos `*_binary` eligen el ejecutable invocado al agregar o quitar dependencias. Estos ajustes se recargan en vivo y actualizan el inventario. Por ejemplo, para usar Cargo y Bun pero no npm:
+
+```toml
+[manager.projects]
+enabled = true
+cargo = true
+npm = false
+bun = true
+```
+
+Cuando existe `Cargo.toml`, Omni lista dependencias directas declaradas y permite agregar o quitar con `cargo add`/`cargo remove`. Para JavaScript reconoce `package.json`; usa `bun add`/`bun remove` o `npm install`/`npm uninstall` según el proyecto. `a` agrega y `d`/`x` quita la dependencia seleccionada. Cada comando se ejecuta con el directorio raíz del proyecto como cwd y argumentos separados, no mediante interpolación de shell. La salida aparece en el panel Details.
+
+Omni no ejecuta estas operaciones al abrir un proyecto: la instalación solo comienza cuando el usuario la solicita desde la categoría del proyecto y revisa el nombre del paquete en el prompt. La detección no implica que Omni controle versiones de runtime, scripts de instalación, workspaces o gestores alternativos; los cambios reales los realizan Cargo, npm o Bun y sus propias reglas.

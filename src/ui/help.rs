@@ -46,6 +46,9 @@ pub fn render(
     package_dependency_key: &str,
     updates_key: &str,
     selection_key: &str,
+    clear_selection_key: &str,
+    update_packages_key: &str,
+    add_project_key: &str,
     filter: &str,
     filtering: bool,
 ) {
@@ -81,6 +84,9 @@ pub fn render(
         package_dependency_key,
         updates_key,
         selection_key,
+        clear_selection_key,
+        update_packages_key,
+        add_project_key,
     );
     let filter = filter.trim().to_lowercase();
     let mut lines = Vec::new();
@@ -171,6 +177,9 @@ fn shortcuts(
     package_dependency_key: &str,
     updates_key: &str,
     selection_key: &str,
+    clear_selection_key: &str,
+    update_packages_key: &str,
+    add_project_key: &str,
 ) -> Vec<Shortcut> {
     use Section::{Browse, Navigation, Omni};
 
@@ -219,6 +228,21 @@ fn shortcuts(
             section: Browse,
             keys: selection_key.into(),
             description: "Select package and advance to the next row",
+        },
+        Shortcut {
+            section: Browse,
+            keys: clear_selection_key.into(),
+            description: "Clear all selected packages",
+        },
+        Shortcut {
+            section: Browse,
+            keys: update_packages_key.into(),
+            description: "Update selected packages or the package under cursor",
+        },
+        Shortcut {
+            section: Browse,
+            keys: add_project_key.into(),
+            description: "Add a dependency to the selected project manager",
         },
         Shortcut {
             section: Browse,

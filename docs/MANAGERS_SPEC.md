@@ -135,3 +135,23 @@ pub enum OutputFormat {
 1. **Extensibilidad infinita**: Si un usuario usa `pipx`, `nix-env`, `asdf`, `go install`, `npm`, `composer` o `guix`, simplemente añade un bloque `[[manager]]` en `managers.toml`.
 2. **Zero-code plugins**: Los usuarios pueden compartir snippets de configuración de sus gestores favoritos en la comunidad.
 3. **Robustez**: Si el binario (`binary = "..."`) no está en el `$PATH`, Omni desactiva el gestor automáticamente sin errores.
+
+---
+
+## 4. Gestores de dependencias locales de proyectos
+
+Los gestores globales configurados en `managers.toml` son independientes de la integración opcional de proyectos. Esta última se controla desde `~/.config/omni/config.toml` con `[manager.projects]`:
+
+```toml
+[manager.projects]
+enabled = true
+cargo = true
+npm = true
+bun = true
+```
+
+Los valores predeterminados habilitan la detección de Cargo, npm y Bun. `enabled = false` deshabilita por completo la integración local; los booleanos individuales optan por ecosistema. Omni reconoce Cargo mediante `Cargo.toml` y proyectos JavaScript mediante `package.json`, y clasifica npm/Bun según los metadatos del proyecto. En el panel Managers la categoría lleva el nombre de la carpeta del proyecto y el gestor entre corchetes, por ejemplo `omni[Cargo]`, `website[npm]` o `website[bun]`.
+
+La lista local representa dependencias directas declaradas por el proyecto, no un inventario global de paquetes. Para agregar una dependencia, Omni solicita el nombre y ejecuta `cargo add <paquete>`, `npm install <paquete>` o `bun add <paquete>` con el directorio de trabajo en la raíz detectada. Los argumentos se pasan directamente al proceso; no se interpolan en una shell. No se ejecuta ningún comando de instalación al iniciar ni al explorar. La salida queda disponible en Details. El gestor de origen es quien modifica el manifiesto y lockfile y quien aplica sus scripts o reglas de resolución.
+
+Desactiva con `[manager.projects]` los ecosistemas que no quieras que Omni detecte. Las operaciones de proyecto no necesitan `sudo` y se ejecutan con los permisos del usuario actual. Revisa el nombre del paquete antes de confirmar: Cargo, npm y Bun descargan código y pueden ejecutar scripts de instalación conforme a la configuración propia de cada herramienta.
