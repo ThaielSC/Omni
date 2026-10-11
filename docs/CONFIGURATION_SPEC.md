@@ -28,6 +28,10 @@ show_details  = true
 # El valor predeterminado usa fondos distintos y no dibuja líneas.
 border_style = "none"
 
+# Estilo unificado de las ventanas flotantes (Help, confirmaciones y carga).
+# Opciones: "rounded", "plain", "thick", "double". Por defecto: "rounded".
+popup_border_style = "rounded"
+
 # Relleno interno y espacios de las celdas
 padding = 1
 ```
