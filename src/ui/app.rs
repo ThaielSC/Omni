@@ -28,7 +28,7 @@ use crate::logging;
 use crate::model::{FilterTab, InstallReason, SortMode, UnifiedPackage};
 use crate::provider::{
     PackageManagerProvider, build_project_add_command, build_project_update_command,
-    build_uninstall_command_with_projects, build_update_command,
+    build_uninstall_command_with_projects, build_update_command, build_uv_update_command,
     cargo::CargoProvider,
     custom::CustomManager,
     flatpak::FlatpakProvider,
@@ -1044,6 +1044,29 @@ impl App {
                         return;
                     }
                 }
+            } else if group
+                .first()
+                .is_some_and(|package| package.source == crate::model::PackageSource::Uv)
+            {
+                let mut built = Vec::new();
+                for package in group {
+                    let Some(target_version) = self.update_versions.get(&package_identity(package))
+                    else {
+                        self.set_error_notice(format!(
+                            "Missing detected update version for {}",
+                            package.name
+                        ));
+                        return;
+                    };
+                    match build_uv_update_command(&package.name, target_version) {
+                        Ok(command) => built.push(command),
+                        Err(error) => {
+                            self.set_error_notice(error);
+                            return;
+                        }
+                    }
+                }
+                built
             } else {
                 match build_update_command(
                     group,
