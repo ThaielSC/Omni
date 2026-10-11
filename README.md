@@ -249,7 +249,7 @@ El proyecto usa la edición 2024 de Rust. La TUI se construye con Ratatui y Cros
 
 ## Logs
 
-Omni conserva los avisos breves de la status bar y el resultado de operaciones en un log persistente. No guarda la salida completa de comandos ni datos de autenticación.
+Omni conserva los avisos breves de la status bar y el resultado de operaciones en un log persistente con niveles `INFO`, `WARN` y `ERROR`. Los fallos de consulta de managers quedan como advertencias; errores de configuración, portapapeles y operaciones se registran como errores. No guarda la salida completa de comandos ni datos de autenticación.
 
 - `omni --logs`: muestra las últimas 500 entradas.
 - `omni --log-path`: imprime la ruta del archivo.

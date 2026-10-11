@@ -826,7 +826,7 @@ impl App {
                     self.start_operation();
                 }
             }
-            Err(error) => self.set_notice(error),
+            Err(error) => self.set_error_notice(error),
         }
     }
 
@@ -865,7 +865,7 @@ impl App {
                 self.operation_kind = OperationKind::Add;
                 self.launch_operation(None);
             }
-            Err(error) => self.set_notice(error),
+            Err(error) => self.set_error_notice(error),
         }
     }
 
@@ -947,7 +947,9 @@ impl App {
                     .iter()
                     .find(|manager| manager.id == manager_id);
                 let Some(manager) = manager else {
-                    self.set_notice(format!("Custom manager '{manager_id}' is not configured"));
+                    self.set_error_notice(format!(
+                        "Custom manager '{manager_id}' is not configured"
+                    ));
                     return;
                 };
                 let mut built = Vec::new();
@@ -970,14 +972,14 @@ impl App {
                             ) {
                                 Ok(command) => built.push(command),
                                 Err(error) => {
-                                    self.set_notice(error);
+                                    self.set_error_notice(error);
                                     return;
                                 }
                             }
                         }
                         Ok(None) => {}
                         Err(error) => {
-                            self.set_notice(error.to_string());
+                            self.set_error_notice(error.to_string());
                             return;
                         }
                     }
@@ -989,11 +991,11 @@ impl App {
             {
                 let first = &group[0];
                 let Some(manager_id) = first.manager_id.as_deref() else {
-                    self.set_notice("Project package is missing manager identity");
+                    self.set_error_notice("Project package is missing manager identity");
                     return;
                 };
                 let Some((_, root)) = manager_id.split_once(":") else {
-                    self.set_notice("Invalid project manager identity");
+                    self.set_error_notice("Invalid project manager identity");
                     return;
                 };
                 let names = group
@@ -1008,7 +1010,7 @@ impl App {
                 ) {
                     Ok(command) => vec![command],
                     Err(error) => {
-                        self.set_notice(error);
+                        self.set_error_notice(error);
                         return;
                     }
                 }
@@ -1020,7 +1022,7 @@ impl App {
                 ) {
                     Ok(command) => vec![command],
                     Err(error) => {
-                        self.set_notice(error);
+                        self.set_error_notice(error);
                         return;
                     }
                 }
@@ -1176,6 +1178,16 @@ impl App {
     fn set_notice(&mut self, message: impl Into<String>) {
         let message = message.into();
         logging::info(&format!("Notice: {message}"));
+        self.show_notice(message);
+    }
+
+    fn set_error_notice(&mut self, message: impl Into<String>) {
+        let message = message.into();
+        logging::error(&format!("Notice: {message}"));
+        self.show_notice(message);
+    }
+
+    fn show_notice(&mut self, message: String) {
         self.notice = Some((message, Instant::now() + Duration::from_secs(3)));
     }
 
@@ -1231,7 +1243,7 @@ impl App {
             }
             UiEvent::ClipboardResult(name, result) => match result {
                 Ok(()) => self.set_notice(format!("Copied package name: {name}")),
-                Err(error) => self.set_notice(format!("Clipboard copy failed: {error}")),
+                Err(error) => self.set_error_notice(format!("Clipboard copy failed: {error}")),
             },
             UiEvent::OperationFinished(code) => {
                 let operation = self
@@ -1364,7 +1376,7 @@ fn event_loop(
         if let Some(result) = watcher.poll() {
             match result {
                 Ok((config, managers_changed)) => app.apply_config(config, managers_changed),
-                Err(error) => app.set_notice(format!("Config error: {error}")),
+                Err(error) => app.set_error_notice(format!("Config error: {error}")),
             }
         }
         terminal.draw(|frame| render(frame, app))?;
