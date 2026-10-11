@@ -116,19 +116,23 @@ Los atajos predeterminados se pueden reasignar; la ventana `?` muestra las accio
 | `?` | Abrir la ayuda; `/` filtra sus atajos |
 | `q` / `Ctrl-C` | Salir |
 
-## Comprobación de actualizaciones
+## Comprobación y actualización de paquetes
 
 Después de mostrar el inventario inicial, Omni busca actualizaciones en segundo plano. La lista completa de paquetes aparece primero; al terminar la consulta, los paquetes actualizables reciben un indicador `↑` amarillo y la versión disponible aparece en Details. La consulta no bloquea la navegación. Pulsa `u` para filtrar la lista a los paquetes actualizables y otra vez para volver al inventario completo. `r` vuelve a consultar tras recargar los paquetes.
 
-Cobertura actual:
+La detección disponible depende del gestor y de sus herramientas:
 
-- **Repositorios de Arch:** usa `checkupdates`, que comprueba versiones disponibles con una base de datos temporal y evita actualizar la base normal de sincronización de Pacman. Si falta, instala `pacman-contrib`.
-- **AUR:** usa `yay -Qua` si `yay` está instalado.
-- **Otros gestores:** la comprobación de actualizaciones todavía no está implementada.
+- **Pacman:** `checkupdates` (paquete `pacman-contrib`), que usa una base temporal para no alterar la base local sincronizada.
+- **AUR:** `yay -Qua`.
+- **Flatpak:** actualizaciones de aplicaciones disponibles desde los remotos configurados.
+- **uv y pip:** versiones nuevas para las herramientas instaladas por cada gestor.
+- **Cargo global:** requiere el subcomando opcional `cargo install-update` del paquete `cargo-update`.
+- **Proyectos locales:** Cargo consulta con `cargo update --dry-run`; npm y Bun usan sus consultas `outdated`. Omni filtra a dependencias directas del proyecto. Los nombres de ejecutables se pueden configurar en `[manager.projects]`.
+- **Managers personalizados:** la comprobación es optativa y requiere `update_check_cmd` y `update_format` en `managers.toml`.
 
 Pulsa `U` para actualizar los paquetes seleccionados o, si no hay selección, el paquete bajo el cursor. Solo se eligen como objetivos paquetes con una actualización detectada. Omni muestra una confirmación con los objetivos y comandos; la salida de la operación se transmite al panel Details y permanece ahí al finalizar. Las actualizaciones se pueden solicitar en lote.
 
-La actualización está implementada actualmente para Pacman y AUR. Otros gestores todavía no tienen una consulta ni un comando de actualización nativos. En Arch, la confirmación de Pacman avisa que `pacman -Syu` puede actualizar también otros paquetes desactualizados: Arch no admite actualizaciones parciales. Para AUR se usa `yay` limitado a objetivos AUR; sus scripts de compilación se ejecutan como usuario.
+La actualización está disponible para los proveedores nativos y de proyecto que tienen una operación definida; los managers personalizados requieren `update_cmd`. En Arch, la confirmación de Pacman avisa que `pacman -Syu` puede actualizar también otros paquetes desactualizados: Arch no admite actualizaciones parciales. AUR se actualiza con `yay` limitado a los objetivos detectados, y sus scripts de compilación se ejecutan como usuario. Las actualizaciones de proyecto pueden cambiar manifiestos y lockfiles según el gestor; revisa la confirmación antes de aceptar.
 
 ## Selección y desinstalación
 
