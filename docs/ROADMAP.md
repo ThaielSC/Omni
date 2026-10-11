@@ -23,6 +23,7 @@ Omni is a Rust package inventory and management TUI that unifies system and lang
 - [x] Search, sorting, focused package view, help modal, live configuration reload.
 - [x] Configurable panel borders/backgrounds and Gruvbox-oriented theme.
 - [x] Package dependency subpanel and dependency detail selection.
+- [x] Copy the selected package name or the text displayed in Details to the system clipboard without blocking the event loop.
 
 ### M4 — Safe package operations (`v0.1.0-rc.1`)
 
@@ -34,7 +35,8 @@ Omni is a Rust package inventory and management TUI that unifies system and lang
 - [x] Opt-in update discovery and argv-based update commands for custom managers.
 - [x] Enrich package metadata for pip, Flatpak runtime requirements, and custom manager JSON/info/size commands where available.
 - [x] Persist user-visible notices and operation summaries in a private, rotating log; expose `omni --logs` and `omni --log-path`.
-- [ ] Manually exercise each available manager and privilege-helper path in a disposable test environment.
+- [x] Document actual metadata coverage and known limitations for every built-in, custom, and project-local provider in [`PROVIDER_SUPPORT.md`](PROVIDER_SUPPORT.md). A read-only smoke check on the current Arch host confirmed installed inventories for Pacman, AUR, Flatpak, Cargo, uv, and pip; it does not substitute for mutation tests.
+- [ ] Manually exercise every manager and privilege-helper path in a disposable environment. A pip uninstall plus automatic inventory refresh passed in a throwaway venv on 2026-10-10; Pacman/AUR/Flatpak/Cargo/uv mutations, sudo/doas success/cancel paths, and all other manager mutation flows remain unverified.
 - [ ] Complete remaining release gates in [`VERSIONING.md`](VERSIONING.md). The source-level command review and current dependency advisory scan are documented in [`SECURITY_REVIEW.md`](SECURITY_REVIEW.md); live-manager and TUI acceptance checks remain.
 
 ## Post-1.0 / optional follow-up
@@ -46,4 +48,4 @@ Omni is a Rust package inventory and management TUI that unifies system and lang
 
 ## Verification
 
-GitHub Actions runs `cargo test --all-targets` and `cargo build --release` for pushes and pull requests. Run `cargo fmt --all -- --check` locally before submitting; the current historical test baseline has formatting-only differences. Automated tests validate parsers, command construction, config, and CLI behavior; they do not run real uninstall operations. Manual uninstall verification must use disposable packages or a throwaway environment.
+GitHub Actions runs `cargo test --all-targets` and `cargo build --release` for pushes and pull requests. Run `cargo fmt --all -- --check` locally before submitting. Automated tests validate parsers, command construction, config, and CLI behavior; they do not run real uninstall operations. Manual uninstall verification must use disposable packages or a throwaway environment.
