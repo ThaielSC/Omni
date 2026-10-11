@@ -681,7 +681,9 @@ impl App {
         {
             self.uninstall_console = None;
             self.detail_scroll = 0;
-            self.start_reload();
+            if !self.loading {
+                self.start_reload();
+            }
         }
     }
 
@@ -753,6 +755,10 @@ impl App {
 
     fn start_reload(&mut self) {
         if self.loading {
+            // Coalesce refresh requests instead of dropping them. This matters
+            // when an operation finishes while an inventory scan is already
+            // running: that scan may have started before the package changed.
+            self.reload_after_loading = true;
             return;
         }
         self.loading = true;
@@ -1276,15 +1282,20 @@ impl App {
                 }
                 if code == Some(0) {
                     self.set_notice(format!(
-                        "{} completed; press r or leave Details to refresh packages",
+                        "{} completed; refreshing package inventory",
                         operation.label()
                     ));
                 } else {
                     self.set_notice(format!(
-                        "{} failed; see output in Details",
+                        "{} failed; checking package inventory; see output in Details",
                         operation.label()
                     ));
                 }
+                // Reconcile inventory after every completed operation. Even a
+                // non-zero exit can follow partial success (for example, one
+                // package was removed before a later selected package failed).
+                // Keep the output visible in Details until the user leaves it.
+                self.start_reload();
             }
             UiEvent::Updates(generation, updates, errors) => {
                 if generation != self.inventory_generation {
