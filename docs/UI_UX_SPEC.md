@@ -14,6 +14,11 @@
 5. **Navegación espacial `h / j / k / l`**:
    - `h` y `l` cambian de columna (como moverse entre divisiones en Helix/Vim).
    - `j` y `k` suben y bajan en la columna enfocada.
+6. **Vista enfocada**: Las dependencias identificadas se ocultan al iniciar; `e` alterna `DEPS OFF` / `DEPS ON`. Los paquetes sin clasificación fiable permanecen visibles.
+
+## Decoración y separación de paneles
+
+`[layout].border_style` admite `none` (predeterminado, fondos distintos), `vertical` (solo separadores entre paneles), `rounded`, `plain`, `thick` y `double`. En `[theme.colors]`, `panel_managers_bg`, `panel_packages_bg` y `panel_details_bg` personalizan los fondos individuales.
 
 ---
 

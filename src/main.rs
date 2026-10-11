@@ -1,5 +1,5 @@
 use clap::Parser;
-use omni::config::{OmniConfig, default_managers_path};
+use omni::config::OmniConfig;
 use omni::model::{SortMode, UnifiedPackage};
 use omni::provider::{
     PackageManagerProvider, cargo::CargoProvider, custom::CustomManager, flatpak::FlatpakProvider,
@@ -30,13 +30,31 @@ struct Args {
 
 fn execute() -> Result<(), String> {
     let args = Args::parse();
-    let config = if let Some(path) = args.config.as_deref() {
+    let mut config = if let Some(path) = args.config.as_deref() {
         let contents = std::fs::read_to_string(path)
             .map_err(|e| format!("cannot read config {}: {e}", path.display()))?;
         OmniConfig::from_toml_str(&contents).map_err(|e| format!("invalid config: {e}"))?
     } else {
         OmniConfig::load_or_default()
     };
+
+    if let Some(path) = args
+        .config
+        .as_deref()
+        .and_then(|path| path.parent())
+        .map(|path| path.join("managers.toml"))
+    {
+        if let Ok(mut managers) = omni::config::load_managers_from_path(&path) {
+            config.custom_managers.append(&mut managers);
+        }
+    }
+
+    // Preserve the existing machine-readable/headless interface while making
+    // the interactive inventory the default invocation.
+    let list_mode = args.list || args.json || args.manager.is_some() || args.sort.is_some();
+    if !list_mode {
+        return omni::ui::run(config).map_err(|error| error.to_string());
+    }
 
     let mut providers: Vec<Box<dyn PackageManagerProvider>> = vec![
         Box::new(PacmanProvider),
@@ -46,23 +64,8 @@ fn execute() -> Result<(), String> {
         Box::new(UvProvider),
         Box::new(PipProvider),
     ];
-    let mut custom_configs = config.custom_managers;
-    if let Some(path) = args
-        .config
-        .as_deref()
-        .and_then(|p| p.parent())
-        .map(|p| p.join("managers.toml"))
-    {
-        if let Ok(mut extra) = omni::config::load_managers_from_path(&path) {
-            custom_configs.append(&mut extra);
-        }
-    } else if let Some(path) = default_managers_path() {
-        if let Ok(mut extra) = omni::config::load_managers_from_path(&path) {
-            custom_configs.append(&mut extra);
-        }
-    }
     providers.extend(
-        CustomManager::from_configs(custom_configs)
+        CustomManager::from_configs(config.custom_managers)
             .into_iter()
             .map(|p| Box::new(p) as Box<dyn PackageManagerProvider>),
     );

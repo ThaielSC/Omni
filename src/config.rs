@@ -22,7 +22,8 @@ pub struct LayoutConfig {
     pub show_managers: bool,
     /// Whether Column 3 (Details inspector) is shown by default.
     pub show_details: bool,
-    /// Border style: "rounded", "plain", "thick", "double", "none". Default: "rounded".
+    /// Panel decoration: "rounded", "plain", "thick", "double", "vertical", or "none".
+    /// `vertical` draws only dividers between panes; `none` draws no lines.
     pub border_style: String,
     /// Inner cell padding. Default: 1.
     pub padding: u16,
@@ -34,7 +35,7 @@ impl Default for LayoutConfig {
             ratio: [1, 2, 3],
             show_managers: true,
             show_details: true,
-            border_style: "rounded".to_string(),
+            border_style: "none".to_string(),
             padding: 1,
         }
     }
@@ -73,6 +74,17 @@ impl LayoutConfig {
             "double" => BorderType::Double,
             _ => BorderType::Plain,
         }
+    }
+
+    pub fn has_panel_borders(&self) -> bool {
+        matches!(
+            self.border_style.to_lowercase().as_str(),
+            "rounded" | "plain" | "thick" | "double"
+        )
+    }
+
+    pub fn has_vertical_separators(&self) -> bool {
+        self.border_style.eq_ignore_ascii_case("vertical")
     }
 
     /// Computes column constraints based on current panel visibility and ratios.
@@ -362,6 +374,11 @@ pub struct ThemeColors {
     pub border: String,
     pub border_focused: String,
 
+    // Optional per-panel backgrounds, defaulting to the global background.
+    pub panel_managers_bg: String,
+    pub panel_packages_bg: String,
+    pub panel_details_bg: String,
+
     // Selection indicators
     pub selection_bg: String,
     pub selection_fg: String,
@@ -398,6 +415,10 @@ impl Default for ThemeColors {
             border: "#5a524c".to_string(),
             border_focused: "#d8a657".to_string(),
 
+            panel_managers_bg: "#2e2b2a".to_string(),
+            panel_packages_bg: "#282828".to_string(),
+            panel_details_bg: "#32302f".to_string(),
+
             selection_bg: "#45403d".to_string(),
             selection_fg: "#d4be98".to_string(),
             cursor_bar: "#d8a657".to_string(),
@@ -427,6 +448,18 @@ impl Default for ThemeColors {
 impl ThemeColors {
     pub fn bg_color(&self) -> Color {
         parse_hex_color(&self.bg).unwrap_or(Color::Rgb(0x28, 0x28, 0x28))
+    }
+
+    pub fn panel_managers_bg_color(&self) -> Color {
+        parse_hex_color(&self.panel_managers_bg).unwrap_or_else(|_| self.bg_color())
+    }
+
+    pub fn panel_packages_bg_color(&self) -> Color {
+        parse_hex_color(&self.panel_packages_bg).unwrap_or_else(|_| self.bg_color())
+    }
+
+    pub fn panel_details_bg_color(&self) -> Color {
+        parse_hex_color(&self.panel_details_bg).unwrap_or_else(|_| self.bg_color())
     }
 
     pub fn fg_color(&self) -> Color {
@@ -550,6 +583,7 @@ pub enum Action {
     // Panes
     ToggleManagers,
     ToggleDetails,
+    ToggleDependencies,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -689,7 +723,8 @@ fn parse_inner_key(inner: &str, original: &str) -> Result<KeyEvent, KeyParseErro
         return Err(KeyParseError::InvalidSyntax(original.to_string()));
     }
 
-    let (mod_part, key_part) = if (inner.ends_with('-') || inner.ends_with('+')) && inner.len() > 1 {
+    let (mod_part, key_part) = if (inner.ends_with('-') || inner.ends_with('+')) && inner.len() > 1
+    {
         let last_char = &inner[inner.len() - 1..];
         let prev_char = inner.chars().nth(inner.len() - 2);
         if prev_char == Some('-') || prev_char == Some('+') {
@@ -722,7 +757,7 @@ fn parse_inner_key(inner: &str, original: &str) -> Result<KeyEvent, KeyParseErro
                     return Err(KeyParseError::UnknownModifier(
                         token_clean.to_string(),
                         original.to_string(),
-                    ))
+                    ));
                 }
             }
         }
@@ -762,7 +797,8 @@ fn parse_named_or_char_key(
         "space" | "spacebar" | "spc" => KeyCode::Char(' '),
         "null" => KeyCode::Null,
         _ => {
-            if lower.starts_with('f') && lower.len() >= 2
+            if lower.starts_with('f')
+                && lower.len() >= 2
                 && let Ok(n @ 1..=12) = lower[1..].parse::<u8>()
             {
                 return Ok(KeyEvent::new(KeyCode::F(n), modifiers));
@@ -799,13 +835,16 @@ pub fn key_matches(expected: &KeyEvent, actual: &KeyEvent) -> bool {
     let (exp_code, exp_mods) = normalize_event(expected);
     let (act_code, act_mods) = normalize_event(actual);
 
-    let mask = KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT | KeyModifiers::SUPER;
+    let mask =
+        KeyModifiers::CONTROL | KeyModifiers::ALT | KeyModifiers::SHIFT | KeyModifiers::SUPER;
     let exp_filtered = exp_mods & mask;
     let act_filtered = act_mods & mask;
 
     match (exp_code, act_code) {
         (KeyCode::Char(c1), KeyCode::Char(c2)) => {
-            if exp_filtered.contains(KeyModifiers::CONTROL) || exp_filtered.contains(KeyModifiers::ALT) {
+            if exp_filtered.contains(KeyModifiers::CONTROL)
+                || exp_filtered.contains(KeyModifiers::ALT)
+            {
                 c1.eq_ignore_ascii_case(&c2) && exp_filtered == act_filtered
             } else {
                 c1 == c2 && exp_filtered == act_filtered
@@ -816,8 +855,10 @@ pub fn key_matches(expected: &KeyEvent, actual: &KeyEvent) -> bool {
             (exp_mods & non_shift_mask) == (act_mods & non_shift_mask)
         }
         (KeyCode::BackTab, KeyCode::Tab) | (KeyCode::Tab, KeyCode::BackTab) => {
-            let exp_has_shift = exp_mods.contains(KeyModifiers::SHIFT) || exp_code == KeyCode::BackTab;
-            let act_has_shift = act_mods.contains(KeyModifiers::SHIFT) || act_code == KeyCode::BackTab;
+            let exp_has_shift =
+                exp_mods.contains(KeyModifiers::SHIFT) || exp_code == KeyCode::BackTab;
+            let act_has_shift =
+                act_mods.contains(KeyModifiers::SHIFT) || act_code == KeyCode::BackTab;
             exp_has_shift && act_has_shift
         }
         (c1, c2) => c1 == c2 && exp_filtered == act_filtered,
@@ -866,6 +907,7 @@ pub struct KeymapConfig {
     pub quit: KeyBindings,
     pub toggle_managers: KeyBindings,
     pub toggle_details: KeyBindings,
+    pub toggle_dependencies: KeyBindings,
 }
 
 impl Default for KeymapConfig {
@@ -896,6 +938,7 @@ impl Default for KeymapConfig {
             quit: KeyBindings::new(["q", "<C-c>"]),
             toggle_managers: KeyBindings::new(["M"]),
             toggle_details: KeyBindings::new(["D"]),
+            toggle_dependencies: KeyBindings::new(["e"]),
         }
     }
 }
@@ -929,6 +972,7 @@ impl KeymapConfig {
             (Action::Up, &self.up),
             (Action::ToggleManagers, &self.toggle_managers),
             (Action::ToggleDetails, &self.toggle_details),
+            (Action::ToggleDependencies, &self.toggle_dependencies),
         ];
 
         for (action, bindings) in action_map {
@@ -972,6 +1016,7 @@ impl KeymapConfig {
             Action::Quit => &self.quit,
             Action::ToggleManagers => &self.toggle_managers,
             Action::ToggleDetails => &self.toggle_details,
+            Action::ToggleDependencies => &self.toggle_dependencies,
         }
     }
 }
@@ -1051,7 +1096,9 @@ pub fn parse_managers_toml(content: &str) -> Result<Vec<CustomManagerConfig>, to
 }
 
 /// Loads custom manager configurations from an optional file path.
-pub fn load_managers_from_path(path: &Path) -> Result<Vec<CustomManagerConfig>, Box<dyn std::error::Error>> {
+pub fn load_managers_from_path(
+    path: &Path,
+) -> Result<Vec<CustomManagerConfig>, Box<dyn std::error::Error>> {
     let content = std::fs::read_to_string(path)?;
     let managers = parse_managers_toml(&content)?;
     Ok(managers)
@@ -1199,9 +1246,9 @@ mod tests {
         assert_eq!(layout.ratio, [1, 2, 3]);
         assert!(layout.show_managers);
         assert!(layout.show_details);
-        assert_eq!(layout.border_style, "rounded");
+        assert_eq!(layout.border_style, "none");
         assert_eq!(layout.padding, 1);
-        assert_eq!(layout.border_type(), BorderType::Rounded);
+        assert_eq!(layout.border_type(), BorderType::Plain);
     }
 
     #[test]
@@ -1252,8 +1299,14 @@ mod tests {
 
     #[test]
     fn test_parse_hex_color() {
-        assert_eq!(parse_hex_color("#282828").unwrap(), Color::Rgb(0x28, 0x28, 0x28));
-        assert_eq!(parse_hex_color("d4be98").unwrap(), Color::Rgb(0xd4, 0xbe, 0x98));
+        assert_eq!(
+            parse_hex_color("#282828").unwrap(),
+            Color::Rgb(0x28, 0x28, 0x28)
+        );
+        assert_eq!(
+            parse_hex_color("d4be98").unwrap(),
+            Color::Rgb(0xd4, 0xbe, 0x98)
+        );
         assert_eq!(parse_hex_color("#fff").unwrap(), Color::Rgb(255, 255, 255));
         assert_eq!(parse_hex_color("red").unwrap(), Color::Red);
         assert_eq!(parse_hex_color("green").unwrap(), Color::Green);
@@ -1497,9 +1550,15 @@ mod tests {
         );
 
         // Valid colors continue to succeed
-        assert_eq!(parse_hex_color("#282828").unwrap(), Color::Rgb(0x28, 0x28, 0x28));
+        assert_eq!(
+            parse_hex_color("#282828").unwrap(),
+            Color::Rgb(0x28, 0x28, 0x28)
+        );
         assert_eq!(parse_hex_color("#fff").unwrap(), Color::Rgb(255, 255, 255));
-        assert_eq!(parse_hex_color("d4be98").unwrap(), Color::Rgb(0xd4, 0xbe, 0x98));
+        assert_eq!(
+            parse_hex_color("d4be98").unwrap(),
+            Color::Rgb(0xd4, 0xbe, 0x98)
+        );
         assert_eq!(parse_hex_color("red").unwrap(), Color::Red);
     }
 
@@ -1597,11 +1656,7 @@ mod tests {
         "#;
         km_file.write_all(km_content.as_bytes()).unwrap();
 
-        let config = OmniConfig::load_from_paths(
-            Some(cfg_file.path()),
-            None,
-            Some(km_file.path()),
-        );
+        let config = OmniConfig::load_from_paths(Some(cfg_file.path()), None, Some(km_file.path()));
 
         assert_eq!(config.layout.ratio, [2, 3, 4]);
         assert_eq!(config.keymap.quit.as_slice(), &["<C-q>"]);
