@@ -19,6 +19,7 @@ pub fn render(
     total_size: u64,
     sort: SortMode,
     show_dependencies: bool,
+    notice: Option<&str>,
 ) {
     let base = theme.status_bar_style();
     let mode_style = if searching {
@@ -40,7 +41,9 @@ pub fn render(
         format!("{}/{}", selected.saturating_add(1).min(count), count)
     };
     let size = crate::utils::format::format_bytes(Some(total_size));
-    let right = format!("{}  Size: {}  utf-8", sort.display_name(), size);
+    let right = notice
+        .map(str::to_owned)
+        .unwrap_or_else(|| format!("{}  Size: {}  utf-8", sort.display_name(), size));
     let available = area.width as usize;
     let right_width = right.chars().count().min(available);
     let left_width = left
