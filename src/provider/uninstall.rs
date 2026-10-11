@@ -43,6 +43,14 @@ impl UninstallCommand {
     pub fn args(&self) -> &[String] {
         &self.args
     }
+
+    /// Return the sudo executable when this operation is configured to use it.
+    /// The TUI may temporarily leave raw mode and run `sudo -v` on the user's
+    /// terminal before executing this command non-interactively.
+    pub fn sudo_program(&self) -> Option<&str> {
+        (std::path::Path::new(&self.program).file_name()?.to_str()? == "sudo")
+            .then_some(self.program.as_str())
+    }
 }
 
 /// Construct an uninstall command for a package from a supported native or
@@ -174,8 +182,8 @@ fn privileged_command(
     if needs_privileges {
         let (sudo, sudo_args) = sudo_parts(behavior)?;
         let mut full_args = sudo_args;
-        // The TUI owns terminal input; never block waiting for a password on
-        // its raw-mode terminal. Users can authorize beforehand with `sudo -v`.
+        // The TUI obtains sudo authorization in a separate terminal prompt
+        // before starting this non-interactive subprocess.
         full_args.push("-n".to_owned());
         full_args.push(binary.to_owned());
         full_args.extend(args);
@@ -251,6 +259,16 @@ mod tests {
             command.args(),
             ["-n", "pacman", "-R", "--noconfirm", "--", "-name"]
         );
+        assert_eq!(command.sudo_program(), Some("sudo"));
+    }
+
+    #[test]
+    fn doas_operations_do_not_request_a_sudo_prompt() {
+        let package = UnifiedPackage::new("app", "1", PackageSource::Pacman);
+        let mut behavior = BehaviorConfig::default();
+        behavior.sudo_command = "doas".into();
+        let command = build_uninstall_command(&package, &behavior, &[]).unwrap();
+        assert_eq!(command.sudo_program(), None);
     }
 
     #[test]

@@ -1,5 +1,6 @@
 use std::io::{self, BufRead, BufReader, Stdout};
 use std::path::{Path, PathBuf};
+use std::process::{Command, ExitStatus};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
@@ -87,6 +88,7 @@ struct App {
     uninstall_command: Option<crate::provider::UninstallCommand>,
     uninstall_console: Option<UninstallConsole>,
     console_scroll: usize,
+    sudo_prompt_requested: bool,
 }
 
 impl App {
@@ -117,6 +119,7 @@ impl App {
             uninstall_command: None,
             uninstall_console: None,
             console_scroll: 0,
+            sudo_prompt_requested: false,
         }
     }
 
@@ -507,6 +510,18 @@ impl App {
     }
 
     fn start_uninstall(&mut self) {
+        if self
+            .uninstall_command
+            .as_ref()
+            .is_some_and(|command| command.sudo_program().is_some())
+        {
+            self.sudo_prompt_requested = true;
+            return;
+        }
+        self.launch_uninstall();
+    }
+
+    fn launch_uninstall(&mut self) {
         let (Some(target), Some(command)) =
             (self.uninstall_target.take(), self.uninstall_command.take())
         else {
@@ -550,6 +565,22 @@ impl App {
             let code = status.and_then(|status| status.code());
             let _ = tx.send(UiEvent::UninstallFinished(code));
         });
+    }
+
+    fn pending_sudo_program(&self) -> Option<&str> {
+        self.uninstall_command.as_ref()?.sudo_program()
+    }
+
+    fn sudo_authorization_finished(&mut self, authorized: bool, error: Option<String>) {
+        if authorized {
+            self.launch_uninstall();
+        } else {
+            self.uninstall_target = None;
+            self.uninstall_command = None;
+            self.set_notice(error.unwrap_or_else(|| {
+                "sudo authorization cancelled; uninstall was not run".to_owned()
+            }));
+        }
     }
 
     fn apply_config(&mut self, config: OmniConfig, managers_changed: bool) {
@@ -686,6 +717,16 @@ fn event_loop(
                 }
                 if app.handle_key(key) {
                     break;
+                }
+                if app.sudo_prompt_requested {
+                    app.sudo_prompt_requested = false;
+                    let sudo = app.pending_sudo_program().unwrap_or("sudo").to_owned();
+                    match authorize_sudo_in_terminal(terminal, &sudo) {
+                        Ok(status) => app.sudo_authorization_finished(status.success(), None),
+                        // Unwind the terminal guard if prompt launch/restoration
+                        // fails; drawing again could corrupt a non-raw screen.
+                        Err(error) => return Err(error),
+                    }
                 }
             }
         }
@@ -1419,7 +1460,7 @@ fn render_uninstall_confirm(
     let popup = centered(area, 74, 13);
     frame.render_widget(Clear, popup);
     let content = format!(
-        "Remove {} ({})?\n\nReview the command: custom managers may run arbitrary configured shell actions. Pacman targets only this package; it will refuse removal if required by another installed package.\nFor system packages, run sudo -v before opening Omni; password prompts are disabled in the TUI.\n\nCommand:\n{}\n\n[y/Enter] confirm   [n/Esc] cancel",
+        "Remove {} ({})?\n\nReview the command: custom managers may run arbitrary configured shell actions. Pacman targets only this package and refuses removal if another installed package requires it.\nFor sudo, Omni briefly restores the terminal and lets sudo prompt; Omni never reads or stores the password.\n\nCommand:\n{}\n\n[y/Enter] confirm   [n/Esc] cancel",
         package.name, package.source, command
     );
     frame.render_widget(
@@ -1559,6 +1600,32 @@ mod uninstall_ui_tests {
 
 struct TerminalGuard {
     terminal: Terminal<CrosstermBackend<Stdout>>,
+}
+
+/// Let sudo interact with the real terminal without exposing password input to
+/// Omni or leaving the TUI in raw mode. Restore the alternate screen even when
+/// sudo exits unsuccessfully; the outer terminal guard remains a final fallback.
+fn authorize_sudo_in_terminal(
+    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
+    sudo_program: &str,
+) -> Result<ExitStatus> {
+    terminal
+        .show_cursor()
+        .context("show cursor for sudo prompt")?;
+    terminal::disable_raw_mode().context("leave raw mode for sudo prompt")?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)
+        .context("leave alternate screen for sudo prompt")?;
+
+    let status = Command::new(sudo_program).arg("-v").status();
+
+    execute!(terminal.backend_mut(), EnterAlternateScreen)
+        .context("restore alternate screen after sudo prompt")?;
+    terminal::enable_raw_mode().context("restore raw mode after sudo prompt")?;
+    terminal
+        .hide_cursor()
+        .context("hide cursor after sudo prompt")?;
+    terminal.clear().context("redraw TUI after sudo prompt")?;
+    Ok(status.context("run sudo credential prompt")?)
 }
 
 impl TerminalGuard {
