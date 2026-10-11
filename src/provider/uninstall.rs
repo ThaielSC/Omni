@@ -16,14 +16,21 @@ pub struct UninstallCommand {
     pub display: String,
     program: String,
     args: Vec<String>,
+    sudo_noninteractive_index: Option<usize>,
 }
 
 impl UninstallCommand {
-    fn direct(program: impl Into<String>, args: Vec<String>, display: String) -> Self {
+    fn direct(
+        program: impl Into<String>,
+        args: Vec<String>,
+        display: String,
+        sudo_noninteractive_index: Option<usize>,
+    ) -> Self {
         Self {
             display,
             program: program.into(),
             args,
+            sudo_noninteractive_index,
         }
     }
 
@@ -45,11 +52,27 @@ impl UninstallCommand {
     }
 
     /// Return the sudo executable when this operation is configured to use it.
-    /// The TUI may temporarily leave raw mode and run `sudo -v` on the user's
-    /// terminal before executing this command non-interactively.
     pub fn sudo_program(&self) -> Option<&str> {
         (std::path::Path::new(&self.program).file_name()?.to_str()? == "sudo")
             .then_some(self.program.as_str())
+    }
+
+    /// Build the sudo form that reads its password from stdin. The caller must
+    /// keep the password out of args, environment variables, and logs.
+    pub fn command_with_stdin_password(&self) -> Command {
+        let mut command = Command::new(&self.program);
+        let Some(index) = self.sudo_noninteractive_index else {
+            command.args(&self.args);
+            return command;
+        };
+        let mut args = self.args.clone();
+        args.remove(index);
+        args.splice(
+            index..index,
+            ["-S".to_owned(), "-p".to_owned(), String::new()],
+        );
+        command.args(args);
+        command
     }
 }
 
@@ -81,8 +104,9 @@ pub fn build_uninstall_command(
                 "--".to_owned(),
                 name.to_owned(),
             ];
-            let (program, args, display) = privileged_command("pacman", args, behavior, true)?;
-            Ok(UninstallCommand::direct(program, args, display))
+            let (program, args, display, sudo_index) =
+                privileged_command("pacman", args, behavior, true)?;
+            Ok(UninstallCommand::direct(program, args, display, sudo_index))
         }
         PackageSource::Flatpak => {
             let args = vec![
@@ -91,23 +115,27 @@ pub fn build_uninstall_command(
                 "--".to_owned(),
                 name.to_owned(),
             ];
-            let (program, args, display) = privileged_command("flatpak", args, behavior, false)?;
-            Ok(UninstallCommand::direct(program, args, display))
+            let (program, args, display, sudo_index) =
+                privileged_command("flatpak", args, behavior, false)?;
+            Ok(UninstallCommand::direct(program, args, display, sudo_index))
         }
         PackageSource::Cargo => {
             let args = vec!["uninstall".to_owned(), name.to_owned()];
-            let (program, args, display) = privileged_command("cargo", args, behavior, false)?;
-            Ok(UninstallCommand::direct(program, args, display))
+            let (program, args, display, sudo_index) =
+                privileged_command("cargo", args, behavior, false)?;
+            Ok(UninstallCommand::direct(program, args, display, sudo_index))
         }
         PackageSource::Uv => {
             let args = vec!["tool".to_owned(), "uninstall".to_owned(), name.to_owned()];
-            let (program, args, display) = privileged_command("uv", args, behavior, false)?;
-            Ok(UninstallCommand::direct(program, args, display))
+            let (program, args, display, sudo_index) =
+                privileged_command("uv", args, behavior, false)?;
+            Ok(UninstallCommand::direct(program, args, display, sudo_index))
         }
         PackageSource::Pip => {
             let args = vec!["uninstall".to_owned(), "-y".to_owned(), name.to_owned()];
-            let (program, args, display) = privileged_command("pip", args, behavior, false)?;
-            Ok(UninstallCommand::direct(program, args, display))
+            let (program, args, display, sudo_index) =
+                privileged_command("pip", args, behavior, false)?;
+            Ok(UninstallCommand::direct(program, args, display, sudo_index))
         }
     }
 }
@@ -125,16 +153,17 @@ fn build_custom_command(
         ));
     }
     let rendered = render_template(&manager.uninstall_cmd, name, version);
-    let (program, args, display) = if manager.need_sudo {
+    let (program, args, display, sudo_index) = if manager.need_sudo {
         shell_command_with_sudo(&rendered, behavior)?
     } else {
         (
             "sh".to_owned(),
             vec!["-c".to_owned(), rendered.clone()],
             rendered,
+            None,
         )
     };
-    Ok(UninstallCommand::direct(program, args, display))
+    Ok(UninstallCommand::direct(program, args, display, sudo_index))
 }
 
 /// Expand placeholders in one pass so placeholder-like text inside a package
@@ -178,34 +207,36 @@ fn privileged_command(
     args: Vec<String>,
     behavior: &BehaviorConfig,
     needs_privileges: bool,
-) -> Result<(String, Vec<String>, String), String> {
+) -> Result<(String, Vec<String>, String, Option<usize>), String> {
     if needs_privileges {
         let (sudo, sudo_args) = sudo_parts(behavior)?;
         let mut full_args = sudo_args;
-        // The TUI obtains sudo authorization in a separate terminal prompt
-        // before starting this non-interactive subprocess.
+        let sudo_index = full_args.len();
+        // Keep normal execution non-interactive. The TUI replaces this flag
+        // with sudo's stdin-password mode only after the user confirms.
         full_args.push("-n".to_owned());
         full_args.push(binary.to_owned());
+        let display = render_command(binary, &args);
         full_args.extend(args);
-        let display = render_command(&sudo, &full_args);
-        Ok((sudo, full_args, display))
+        Ok((sudo, full_args, display, Some(sudo_index)))
     } else {
         let display = render_command(binary, &args);
-        Ok((binary.to_owned(), args, display))
+        Ok((binary.to_owned(), args, display, None))
     }
 }
 
 fn shell_command_with_sudo(
     script: &str,
     behavior: &BehaviorConfig,
-) -> Result<(String, Vec<String>, String), String> {
+) -> Result<(String, Vec<String>, String, Option<usize>), String> {
     let (sudo, mut args) = sudo_parts(behavior)?;
+    let sudo_index = args.len();
     args.push("-n".to_owned());
     args.push("sh".to_owned());
     args.push("-c".to_owned());
     args.push(script.to_owned());
     let display = render_command(&sudo, &args);
-    Ok((sudo, args, display))
+    Ok((sudo, args, display, Some(sudo_index)))
 }
 
 fn sudo_parts(behavior: &BehaviorConfig) -> Result<(String, Vec<String>), String> {
@@ -260,6 +291,24 @@ mod tests {
             ["-n", "pacman", "-R", "--noconfirm", "--", "-name"]
         );
         assert_eq!(command.sudo_program(), Some("sudo"));
+    }
+
+    #[test]
+    fn sudo_password_mode_reads_stdin_and_hides_sudo_from_preview() {
+        let package = UnifiedPackage::new("app", "1", PackageSource::Pacman);
+        let command = build_uninstall_command(&package, &BehaviorConfig::default(), &[]).unwrap();
+
+        assert_eq!(command.display, "'pacman' '-R' '--noconfirm' '--' 'app'");
+        let prepared = command.command_with_stdin_password();
+        let args = prepared
+            .get_args()
+            .map(|arg| arg.to_string_lossy().into_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            args,
+            ["-S", "-p", "", "pacman", "-R", "--noconfirm", "--", "app"]
+        );
+        assert!(!args.iter().any(|arg| arg == "-n"));
     }
 
     #[test]

@@ -1,6 +1,5 @@
-use std::io::{self, BufRead, BufReader, Stdout};
+use std::io::{self, BufRead, BufReader, Stdout, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, ExitStatus};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime};
@@ -17,6 +16,7 @@ use ratatui::style::{Modifier, Style};
 use ratatui::text::{Line, Span, Text};
 use ratatui::widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Wrap};
 use ratatui::{Frame, Terminal};
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::config::{
     Action, OmniConfig, ThemeColors, default_config_path, default_keymap_path,
@@ -88,7 +88,7 @@ struct App {
     uninstall_command: Option<crate::provider::UninstallCommand>,
     uninstall_console: Option<UninstallConsole>,
     console_scroll: usize,
-    sudo_prompt_requested: bool,
+    sudo_password_input: Option<Zeroizing<Vec<u8>>>,
 }
 
 impl App {
@@ -119,7 +119,7 @@ impl App {
             uninstall_command: None,
             uninstall_console: None,
             console_scroll: 0,
-            sudo_prompt_requested: false,
+            sudo_password_input: None,
         }
     }
 
@@ -205,6 +205,44 @@ impl App {
     }
 
     fn handle_key(&mut self, key: KeyEvent) -> bool {
+        if self.sudo_password_input.is_some() {
+            match key.code {
+                KeyCode::Esc => {
+                    self.sudo_password_input = None;
+                    self.uninstall_target = None;
+                    self.uninstall_command = None;
+                    self.set_notice("Password entry cancelled; uninstall was not run");
+                }
+                KeyCode::Enter => {
+                    let password = self.sudo_password_input.take().unwrap();
+                    self.launch_uninstall(Some(password));
+                }
+                KeyCode::Backspace => {
+                    let Some(password) = self.sudo_password_input.as_mut() else {
+                        return false;
+                    };
+                    if let Some(index) = password
+                        .iter()
+                        .rposition(|byte| byte & 0b1100_0000 != 0b1000_0000)
+                    {
+                        password.truncate(index);
+                    }
+                }
+                KeyCode::Char(character)
+                    if !key.modifiers.contains(KeyModifiers::CONTROL)
+                        && !key.modifiers.contains(KeyModifiers::ALT) =>
+                {
+                    let Some(password) = self.sudo_password_input.as_mut() else {
+                        return false;
+                    };
+                    let mut encoded = [0; 4];
+                    password.extend_from_slice(character.encode_utf8(&mut encoded).as_bytes());
+                }
+                _ => {}
+            }
+            return false;
+        }
+
         if self.searching {
             match key.code {
                 KeyCode::Esc => {
@@ -515,13 +553,13 @@ impl App {
             .as_ref()
             .is_some_and(|command| command.sudo_program().is_some())
         {
-            self.sudo_prompt_requested = true;
+            self.sudo_password_input = Some(Zeroizing::new(Vec::new()));
             return;
         }
-        self.launch_uninstall();
+        self.launch_uninstall(None);
     }
 
-    fn launch_uninstall(&mut self) {
+    fn launch_uninstall(&mut self, password: Option<Zeroizing<Vec<u8>>>) {
         let (Some(target), Some(command)) =
             (self.uninstall_target.take(), self.uninstall_command.take())
         else {
@@ -538,9 +576,18 @@ impl App {
         self.console_scroll = usize::MAX;
         self.focus = Focus::Details;
         thread::spawn(move || {
-            let mut process = command.command();
+            let uses_stdin_password = password.is_some();
+            let mut process = if uses_stdin_password {
+                command.command_with_stdin_password()
+            } else {
+                command.command()
+            };
             process
-                .stdin(std::process::Stdio::null())
+                .stdin(if uses_stdin_password {
+                    std::process::Stdio::piped()
+                } else {
+                    std::process::Stdio::null()
+                })
                 .stdout(std::process::Stdio::piped())
                 .stderr(std::process::Stdio::piped());
             let mut child = match process.spawn() {
@@ -553,6 +600,24 @@ impl App {
                     return;
                 }
             };
+            if let Some(mut password) = password {
+                if let Some(mut stdin) = child.stdin.take() {
+                    let write_result = stdin
+                        .write_all(password.as_slice())
+                        .and_then(|()| stdin.write_all(b"\n"));
+                    password.zeroize();
+                    drop(stdin);
+                    if let Err(error) = write_result {
+                        let _ = child.kill();
+                        let _ = tx.send(UiEvent::UninstallOutput(format!(
+                            "Failed to send password to sudo: {error}"
+                        )));
+                        let _ = child.wait();
+                        let _ = tx.send(UiEvent::UninstallFinished(None));
+                        return;
+                    }
+                }
+            }
             let stdout = child.stdout.take();
             let stderr = child.stderr.take();
             let out_tx = tx.clone();
@@ -565,22 +630,6 @@ impl App {
             let code = status.and_then(|status| status.code());
             let _ = tx.send(UiEvent::UninstallFinished(code));
         });
-    }
-
-    fn pending_sudo_program(&self) -> Option<&str> {
-        self.uninstall_command.as_ref()?.sudo_program()
-    }
-
-    fn sudo_authorization_finished(&mut self, authorized: bool, error: Option<String>) {
-        if authorized {
-            self.launch_uninstall();
-        } else {
-            self.uninstall_target = None;
-            self.uninstall_command = None;
-            self.set_notice(error.unwrap_or_else(|| {
-                "sudo authorization failed or was cancelled; uninstall was not run".to_owned()
-            }));
-        }
     }
 
     fn apply_config(&mut self, config: OmniConfig, managers_changed: bool) {
@@ -717,16 +766,6 @@ fn event_loop(
                 }
                 if app.handle_key(key) {
                     break;
-                }
-                if app.sudo_prompt_requested {
-                    app.sudo_prompt_requested = false;
-                    let sudo = app.pending_sudo_program().unwrap_or("sudo").to_owned();
-                    match authorize_sudo_in_terminal(terminal, &sudo) {
-                        Ok(status) => app.sudo_authorization_finished(status.success(), None),
-                        // Unwind the terminal guard if prompt launch/restoration
-                        // fails; drawing again could corrupt a non-raw screen.
-                        Err(error) => return Err(error),
-                    }
                 }
             }
         }
@@ -954,6 +993,9 @@ fn render(frame: &mut Frame, app: &App) {
             .filter(|(_, expires)| *expires > Instant::now())
             .map(|(message, _)| message.as_str()),
     );
+    if let Some(password) = app.sudo_password_input.as_ref() {
+        render_sudo_password_prompt(frame, areas.status, password.len(), theme);
+    }
     match app.overlay {
         Some(Overlay::Help) => {
             let dependency_key = app
@@ -1460,7 +1502,7 @@ fn render_uninstall_confirm(
     let popup = centered(area, 74, 13);
     frame.render_widget(Clear, popup);
     let content = format!(
-        "Remove {} ({})?\n\nReview the command: custom managers may run arbitrary configured shell actions. Pacman targets only this package and refuses removal if another installed package requires it.\nFor sudo, Omni briefly restores the terminal and lets sudo prompt; Omni never reads or stores the password.\n\nCommand:\n{}\n\n[y/Enter] confirm   [n/Esc] cancel",
+        "Remove {} ({})?\n\nRemoving a system package requires administrator privileges. Omni runs normally as your user and requests your sudo password only for this operation. Pacman targets only this package and refuses removal if another installed package requires it.\nCustom managers may run arbitrary configured shell actions.\n\nCommand:\n{}\n\n[y/Enter] confirm   [n/Esc] cancel",
         package.name, package.source, command
     );
     frame.render_widget(
@@ -1602,30 +1644,30 @@ struct TerminalGuard {
     terminal: Terminal<CrosstermBackend<Stdout>>,
 }
 
-/// Let sudo interact with the real terminal without exposing password input to
-/// Omni or leaving the TUI in raw mode. Restore the alternate screen even when
-/// sudo exits unsuccessfully; the outer terminal guard remains a final fallback.
-fn authorize_sudo_in_terminal(
-    terminal: &mut Terminal<CrosstermBackend<Stdout>>,
-    sudo_program: &str,
-) -> Result<ExitStatus> {
-    terminal
-        .show_cursor()
-        .context("show cursor for sudo prompt")?;
-    terminal::disable_raw_mode().context("leave raw mode for sudo prompt")?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)
-        .context("leave alternate screen for sudo prompt")?;
-
-    let status = Command::new(sudo_program).arg("-v").status();
-
-    execute!(terminal.backend_mut(), EnterAlternateScreen)
-        .context("restore alternate screen after sudo prompt")?;
-    terminal::enable_raw_mode().context("restore raw mode after sudo prompt")?;
-    terminal
-        .hide_cursor()
-        .context("hide cursor after sudo prompt")?;
-    terminal.clear().context("redraw TUI after sudo prompt")?;
-    Ok(status.context("run sudo credential prompt")?)
+/// Draw an in-app password prompt in the status row. The password is masked and
+/// is only sent to sudo over the child's stdin after confirmation.
+fn render_sudo_password_prompt(frame: &mut Frame, area: Rect, length: usize, theme: &ThemeColors) {
+    frame.render_widget(Clear, area);
+    let bullets = "•".repeat(length.min(area.width as usize / 2));
+    let prompt = Line::from(vec![
+        Span::styled(
+            " sudo ",
+            Style::default()
+                .fg(theme.bg_color())
+                .bg(theme.border_focused_color())
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" password: "),
+        Span::raw(bullets),
+        Span::styled(
+            "▏  Enter: confirm  Esc: cancel",
+            Style::default().fg(theme.border_color()),
+        ),
+    ]);
+    frame.render_widget(
+        Paragraph::new(prompt).style(Style::default().fg(theme.fg_color()).bg(theme.bg_color())),
+        area,
+    );
 }
 
 impl TerminalGuard {
