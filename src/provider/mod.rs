@@ -7,8 +7,11 @@ pub mod custom;
 pub mod flatpak;
 pub mod pacman;
 pub mod pip;
+pub mod uninstall;
 pub mod uv;
 pub mod yay;
+
+pub use uninstall::{UninstallCommand, build_uninstall_command};
 
 pub trait PackageManagerProvider: Send + Sync {
     fn id(&self) -> &str;
