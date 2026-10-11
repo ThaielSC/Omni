@@ -50,6 +50,7 @@ pub fn render(
     update_packages_key: &str,
     add_project_key: &str,
     copy_package_name_key: &str,
+    copy_details_key: &str,
     filter: &str,
     filtering: bool,
 ) {
@@ -89,6 +90,7 @@ pub fn render(
         update_packages_key,
         add_project_key,
         copy_package_name_key,
+        copy_details_key,
     );
     let filter = filter.trim().to_lowercase();
     let mut lines = Vec::new();
@@ -183,6 +185,7 @@ fn shortcuts(
     update_packages_key: &str,
     add_project_key: &str,
     copy_package_name_key: &str,
+    copy_details_key: &str,
 ) -> Vec<Shortcut> {
     use Section::{Browse, Navigation, Omni};
 
@@ -251,6 +254,11 @@ fn shortcuts(
             section: Browse,
             keys: copy_package_name_key.into(),
             description: "Copy the selected package name to the system clipboard",
+        },
+        Shortcut {
+            section: Browse,
+            keys: copy_details_key.into(),
+            description: "Copy the Details panel contents to the system clipboard",
         },
         Shortcut {
             section: Browse,

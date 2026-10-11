@@ -135,6 +135,7 @@ uninstall    = [ "d", "x" ]   # Abre confirmación de desinstalación
 update_packages = "U"         # Actualiza seleccionados o el paquete bajo el cursor
 add_project_package = "a"      # Añade dependencia en la categoría de proyecto activa
 copy_package_name = "c"        # Copia el nombre del paquete bajo el cursor
+copy_details = "C"             # Copia el contenido de texto del panel Details (con foco)
 reload       = "r"            # Rescan de paquetes en segundo plano
 help         = "?"            # Abre modal de ayuda
 quit         = [ "q", "<C-c>" ]

@@ -185,6 +185,7 @@ bun = true
 toggle_updates = "u"
 toggle_package_selection = " "
 copy_package_name = "c"
+copy_details = "C"
 uninstall = ["d", "x"]
 reload = "r"
 help = "?"
@@ -193,6 +194,8 @@ help = "?"
 Los cambios válidos se aplican mientras la aplicación está abierta. Si un archivo queda temporalmente inválido durante la edición, Omni mantiene la última configuración válida y muestra una notificación. La referencia completa de opciones está en [CONFIGURATION_SPEC.md](docs/CONFIGURATION_SPEC.md).
 
 El atajo `c` copia el nombre del paquete bajo el cursor. En Linux hace falta un helper de portapapeles: Omni prueba `wl-copy` (paquete `wl-clipboard`), `xclip` y `xsel`, en ese orden. La copia se realiza en segundo plano para no bloquear la TUI; cada helper tiene un límite de espera y, si falla, Omni muestra una notificación. El atajo puede reasignarse con `copy_package_name`.
+
+Con el foco en el panel Details, `C` copia su contenido de texto al portapapeles: los metadatos visibles del paquete o, si Details está mostrando una operación, el encabezado y la salida de esa consola. También se ejecuta en segundo plano y se reasigna con `copy_details`.
 
 ### Gestores de proyectos
 
