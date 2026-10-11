@@ -52,7 +52,10 @@ El usuario gestiona el repositorio con **GitButler** (`but`).
 
 ### Ramas Virtuales Apiladas (Stack de trabajo en GitButler):
 ```text
-╭┄ at [feat/tui]                   <-- (TUI + personalización visual)
+╭┄ at [feat/uninstall]             <-- (Dependencias + desinstalación segura)
+┊●   feat(uninstall): manage packages and dependencies from the TUI
+┊│
+┊├┄ at [feat/tui]                   <-- (TUI + personalización visual)
 ┊●   feat(ui): add customizable three-pane Ratatui interface
 ┊│
 ┊├┄ pr [feat/providers-import]     <-- (Providers, CLI y clasificación de instalación)
@@ -68,7 +71,7 @@ El usuario gestiona el repositorio con **GitButler** (`but`).
 ```
 
 - **Último tag publicado**: `v0.1.0-beta.1` (TUI interactiva M3).
-- **Estado actual**: providers/CLI y TUI están en el stack virtual. En el workspace hay una implementación aún sin commit para navegar dependencias por paquete y desinstalar con confirmación y consola de salida. Hay también cambios de hardening M1 y documentación que deben asignarse a sus ramas adecuadas.
+- **Estado actual**: providers/CLI, TUI y la gestión de dependencias/desinstalación están en el stack virtual y publicados en PRs encadenadas. Quedan en el workspace únicamente cambios M1 de hardening (`src/utils/format.rs`, `tests/m1_challenger_test.rs`) que no se mezclaron en la PR de gestión.
 
 ---
 

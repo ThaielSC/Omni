@@ -10,6 +10,7 @@ feat/docs
    └─ feat/e2e-test-suite
       └─ feat/providers-import
          └─ feat/tui
+            └─ feat/uninstall
 ```
 
 Las ramas aparecen simultáneamente en el workspace GitButler; cada rama hija se apoya en las anteriores.
@@ -21,6 +22,7 @@ Las ramas aparecen simultáneamente en el workspace GitButler; cada rama hija se
 3. `feat/e2e-test-suite`: fixtures y pruebas de CLI/core.
 4. `feat/providers-import`: providers nativos y dinámicos, CLI texto/JSON y clasificación `InstallReason`.
 5. `feat/tui`: interfaz Ratatui, navegación, statusline, búsqueda, filtro de dependencias y temas/layout configurables.
+6. `feat/uninstall`: navegación de dependencias por paquete, desinstalación confirmada, autorización sudo interactiva y consola de salida.
 
 ## Flujo de trabajo
 
