@@ -147,7 +147,7 @@ toggle_details  = "D"         # Oculta/Muestra panel derecho para pantalla compl
 confirm_uninstall = true
 
 # Comando personalizado para sudo si el usuario prefiere doas o pkexec
-sudo_command = "sudo"         # "sudo", "doas", etc.
+sudo_command = "sudo"         # sudo gets an interactive `sudo -v` prompt; other helpers must already be authorized and accept `-n`.
 
 # Carga en segundo plano de tamaños profundos
 preload_disk_sizes = true
