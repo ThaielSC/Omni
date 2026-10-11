@@ -29,10 +29,14 @@ Omni is a Rust package inventory and management TUI that unifies system and lang
 - [x] Confirm before uninstall; display the exact command that will run.
 - [x] Build native commands with argument vectors; quote custom-manager template values.
 - [x] Stream subprocess output into Details, keep it navigable, and refresh inventory after success.
+- [x] Background update discovery for Pacman, AUR, Flatpak, uv, pip, and global Cargo when `cargo-update` is installed.
+- [x] Read-only update discovery for Cargo/npm/Bun project dependencies, with manager-specific commands to update selected packages.
+- [x] Opt-in update discovery and argv-based update commands for custom managers.
+- [x] Enrich package metadata for pip, Flatpak runtime requirements, and custom manager JSON/info/size commands where available.
 - [ ] Manually exercise each available manager and privilege-helper path in a disposable test environment.
 - [ ] Complete release/security review and confirm all acceptance criteria in [`VERSIONING.md`](VERSIONING.md).
 
-## Later work
+## Post-1.0 / optional follow-up
 
 - Dependency metadata and dependency-to-installed-package resolution for providers beyond Pacman.
 - Orphan detection and safer package cleanup recommendations.
